@@ -1,8 +1,7 @@
-// embed.js - PRODUCTION READY MVP - ZERO BULLSHIT
+// embed.js - SMART TEXT-BASED GUIDE (Works on ANY page)
 (function() {
   'use strict';
 
-  // Prevent double loading
   if (window.FRAPPE_GUIDE_LOADED) return;
   window.FRAPPE_GUIDE_LOADED = true;
 
@@ -133,7 +132,6 @@
       color: #9CA3AF !important;
       text-transform: uppercase !important;
       font-weight: 600 !important;
-      letter-spacing: 0.5px !important;
     }
 
     .guide-section input,
@@ -146,11 +144,6 @@
       color: #F3F4F6 !important;
       font-size: 13px !important;
       box-sizing: border-box !important;
-      font-family: inherit !important;
-    }
-
-    .guide-section input::placeholder {
-      color: #6B7280 !important;
     }
 
     .guide-btn {
@@ -163,18 +156,11 @@
       font-weight: 600 !important;
       cursor: pointer !important;
       margin-top: 10px !important;
-      transition: all 0.2s !important;
       font-size: 13px !important;
-      box-sizing: border-box !important;
     }
 
     .guide-btn:hover {
       background: #2563EB !important;
-      box-shadow: 0 0 20px rgba(59, 130, 246, 0.4) !important;
-    }
-
-    .guide-btn:active {
-      transform: scale(0.98) !important;
     }
 
     .current-step {
@@ -185,13 +171,11 @@
       border-radius: 4px !important;
       font-size: 13px !important;
       line-height: 1.6 !important;
-      color: #F3F4F6 !important;
     }
 
     .current-step strong {
       color: #3B82F6 !important;
       display: block !important;
-      margin-bottom: 6px !important;
     }
 
     .guide-status {
@@ -202,19 +186,10 @@
       background: #374151 !important;
       border-radius: 4px !important;
     }
-
-    @keyframes pulse {
-      0%, 100% { transform: scale(1); }
-      50% { transform: scale(1.3); }
-    }
-
-    .pulse {
-      animation: pulse 0.6s ease-in-out 2 !important;
-    }
   `;
   document.head.appendChild(styleSheet);
 
-  // ============ CREATE DOM ELEMENTS ============
+  // ============ DOM ELEMENTS ============
   const cursor = document.createElement('div');
   cursor.className = 'guide-cursor';
   document.body.appendChild(cursor);
@@ -232,10 +207,10 @@
       <label>Your Role</label>
       <select id="userRole">
         <option value="">Select role...</option>
-        <option value="warehouse">Warehouse Op</option>
+        <option value="warehouse">Warehouse Operator</option>
         <option value="shop">Shop Owner</option>
         <option value="accountant">Accountant</option>
-        <option value="procurement">Procurement</option>
+        <option value="procurement">Procurement Manager</option>
       </select>
     </div>
 
@@ -265,40 +240,76 @@
   });
   document.body.appendChild(tab);
 
-  // ============ WORKFLOWS ============
+  // ============ SMART ELEMENT FINDERS ============
+  function findButtonByText(searchText) {
+    const buttons = document.querySelectorAll('button, a, [role="button"]');
+    const search = searchText.toLowerCase().trim();
+
+    for (let btn of buttons) {
+      const text = btn.textContent.toLowerCase();
+      if (btn.offsetHeight > 0 && text.includes(search)) {
+        return btn;
+      }
+    }
+    return null;
+  }
+
+  function findFieldByLabel(fieldName) {
+    const search = fieldName.toLowerCase();
+    
+    // Try data-fieldname first
+    let field = document.querySelector(`[data-fieldname*="${fieldName}"]`);
+    if (field && field.offsetHeight > 0) return field;
+
+    // Try labels
+    const labels = document.querySelectorAll('label, [data-label]');
+    for (let label of labels) {
+      if (label.textContent.toLowerCase().includes(search)) {
+        const parent = label.closest('.form-group, .frappe-control, .frappe-field');
+        if (parent) {
+          const input = parent.querySelector('input, select, textarea, [contenteditable]');
+          if (input && input.offsetHeight > 0) return input;
+        }
+      }
+    }
+
+    // Last resort - find by name attribute
+    field = document.querySelector(`input[name*="${fieldName}"], select[name*="${fieldName}"]`);
+    if (field && field.offsetHeight > 0) return field;
+
+    return null;
+  }
+
+  // ============ WORKFLOWS (TEXT-BASED) ============
   const WORKFLOWS = {
     'purchase order': [
-      { step: 1, name: 'Open Buying', selector: '[data-label="Buying"]', expected: ['Purchase Order'] },
-      { step: 2, name: 'Click Purchase Order', selector: '[data-label="Purchase Order"]', expected: ['New'] },
-      { step: 3, name: 'Create New', selector: 'button[data-label="New"]', expected: ['Supplier'] },
-      { step: 4, name: 'Select Supplier', selector: '[data-fieldname="supplier"]', expected: ['Item'] },
-      { step: 5, name: 'Add Items', selector: '.grid-add-row', expected: ['Save'] },
-      { step: 6, name: 'Save PO', selector: '[data-label="Save"]', expected: [] }
+      { step: 1, name: 'Click Purchase Order', findBy: 'text', text: 'Purchase Order', action: 'click' },
+      { step: 2, name: 'Click New', findBy: 'text', text: 'New', action: 'click' },
+      { step: 3, name: 'Select Supplier', findBy: 'label', text: 'Supplier', action: 'click' },
+      { step: 4, name: 'Add Item Row', findBy: 'text', text: 'Add Row', action: 'click' },
+      { step: 5, name: 'Save Purchase Order', findBy: 'text', text: 'Save', action: 'click' }
     ],
     'sales order': [
-      { step: 1, name: 'Open Selling', selector: '[data-label="Selling"]', expected: ['Sales Order'] },
-      { step: 2, name: 'Click Sales Order', selector: '[data-label="Sales Order"]', expected: ['New'] },
-      { step: 3, name: 'Create New', selector: 'button[data-label="New"]', expected: ['Customer'] },
-      { step: 4, name: 'Select Customer', selector: '[data-fieldname="customer"]', expected: ['Item'] },
-      { step: 5, name: 'Add Items', selector: '.grid-add-row', expected: ['Save'] },
-      { step: 6, name: 'Save SO', selector: '[data-label="Save"]', expected: [] }
+      { step: 1, name: 'Click Sales Order', findBy: 'text', text: 'Sales Order', action: 'click' },
+      { step: 2, name: 'Click New', findBy: 'text', text: 'New', action: 'click' },
+      { step: 3, name: 'Select Customer', findBy: 'label', text: 'Customer', action: 'click' },
+      { step: 4, name: 'Add Items', findBy: 'text', text: 'Add Row', action: 'click' },
+      { step: 5, name: 'Save Sales Order', findBy: 'text', text: 'Save', action: 'click' }
     ],
     'stock entry': [
-      { step: 1, name: 'Open Stock', selector: '[data-label="Stock"]', expected: ['Stock Entry'] },
-      { step: 2, name: 'Click Stock Entry', selector: '[data-label="Stock Entry"]', expected: ['New'] },
-      { step: 3, name: 'Create New', selector: 'button[data-label="New"]', expected: ['Save'] },
-      { step: 4, name: 'Save Entry', selector: '[data-label="Save"]', expected: [] }
+      { step: 1, name: 'Click Stock Entry', findBy: 'text', text: 'Stock Entry', action: 'click' },
+      { step: 2, name: 'Click New', findBy: 'text', text: 'New', action: 'click' },
+      { step: 3, name: 'Save Entry', findBy: 'text', text: 'Save', action: 'click' }
     ],
     'invoice': [
-      { step: 1, name: 'Open Selling', selector: '[data-label="Selling"]', expected: ['Invoice'] },
-      { step: 2, name: 'Click Invoice', selector: '[data-label="Invoice"]', expected: ['New'] },
-      { step: 3, name: 'Create New', selector: 'button[data-label="New"]', expected: ['Customer'] },
-      { step: 4, name: 'Select Customer', selector: '[data-fieldname="customer"]', expected: ['Save'] },
-      { step: 5, name: 'Save Invoice', selector: '[data-label="Save"]', expected: [] }
+      { step: 1, name: 'Click Invoice', findBy: 'text', text: 'Invoice', action: 'click' },
+      { step: 2, name: 'Click New', findBy: 'text', text: 'New', action: 'click' },
+      { step: 3, name: 'Select Customer', findBy: 'label', text: 'Customer', action: 'click' },
+      { step: 4, name: 'Save Invoice', findBy: 'text', text: 'Save', action: 'click' }
     ]
   };
 
-  // ============ CORE FUNCTIONS ============
+  // ============ ANIMATION ============
   function animateCursor(startX, startY, endX, endY, duration = 600) {
     const startTime = Date.now();
     cursorX = startX;
@@ -307,10 +318,10 @@
     function frame() {
       const elapsed = Date.now() - startTime;
       const progress = Math.min(elapsed / duration, 1);
-      const easeProgress = progress < 0.5 ? 2 * progress * progress : -1 + (4 - 2 * progress) * progress;
+      const ease = progress < 0.5 ? 2 * progress * progress : -1 + (4 - 2 * progress) * progress;
 
-      cursorX = startX + (endX - startX) * easeProgress;
-      cursorY = startY + (endY - startY) * easeProgress;
+      cursorX = startX + (endX - startX) * ease;
+      cursorY = startY + (endY - startY) * ease;
 
       cursor.style.left = (cursorX - 20) + 'px';
       cursor.style.top = (cursorY - 20) + 'px';
@@ -324,19 +335,41 @@
     requestAnimationFrame(frame);
   }
 
+  // ============ EXECUTE STEP ============
   function showStep(step) {
-    const element = document.querySelector(step.selector);
+    let element = null;
+
+    if (step.findBy === 'text') {
+      element = findButtonByText(step.text);
+    } else if (step.findBy === 'label') {
+      element = findFieldByLabel(step.text);
+    }
 
     if (!element || element.offsetHeight === 0) {
       document.getElementById('guidance').innerHTML = `
         <div class="current-step" style="background:#f59e0b14; border-left-color:#f59e0b;">
-          ⚠️ Can't find: ${step.name}
-          <button class="guide-btn" onclick="location.reload()">Refresh Page</button>
+          ⚠️ Looking for: <strong>${step.name}</strong>
+          <p style="margin-top: 8px; font-size: 12px;">Searching page...</p>
         </div>
       `;
+
+      setTimeout(() => {
+        element = step.findBy === 'text' ? findButtonByText(step.text) : findFieldByLabel(step.text);
+        if (element && element.offsetHeight > 0) {
+          showStep(step); // Retry
+        } else {
+          document.getElementById('guidance').innerHTML = `
+            <div class="current-step" style="background:#ef444414; border-left-color:#ef4444;">
+              ❌ Can't find: ${step.name}
+              <button class="guide-btn" onclick="location.reload()" style="margin-top:8px;">Refresh Page</button>
+            </div>
+          `;
+        }
+      }, 1000);
       return;
     }
 
+    // Found element - animate cursor to it
     const rect = element.getBoundingClientRect();
     const targetX = rect.left + rect.width / 2;
     const targetY = rect.top + rect.height / 2;
@@ -344,7 +377,7 @@
     animateCursor(cursorX, cursorY, targetX, targetY, 600);
 
     setTimeout(() => {
-      tooltip.textContent = `Click: ${step.name}`;
+      tooltip.textContent = `${step.action === 'click' ? 'Click' : 'Enter'}: ${step.name}`;
       tooltip.style.left = Math.max(10, targetX + 20) + 'px';
       tooltip.style.top = Math.max(60, targetY - 50) + 'px';
       tooltip.style.display = 'block';
@@ -356,14 +389,17 @@
         </div>
       `;
 
-      // Remove old handler
+      // Handle click
       if (clickHandler) document.removeEventListener('click', clickHandler, true);
 
-      // New handler
-      clickHandler = () => {
-        tooltip.style.display = 'none';
-        currentStepIndex++;
-        executeStep();
+      clickHandler = (e) => {
+        const clicked = e.target.closest('button, a, [role="button"], input, select');
+        if (clicked === element || element.contains(clicked)) {
+          tooltip.style.display = 'none';
+          currentStepIndex++;
+          document.removeEventListener('click', clickHandler, true);
+          setTimeout(executeStep, 500);
+        }
       };
 
       document.addEventListener('click', clickHandler, true);
@@ -374,8 +410,8 @@
     if (currentStepIndex >= workflowSteps.length) {
       document.getElementById('guidance').innerHTML = `
         <div class="current-step" style="background:#10b98114; border-left-color:#10b981;">
-          <strong>✅ Done!</strong>
-          <p>You completed the workflow!</p>
+          <strong>✅ Workflow Complete!</strong>
+          <p>You did it! 🎉</p>
         </div>
       `;
       tooltip.style.display = 'none';
@@ -403,13 +439,8 @@
 
     document.getElementById('taskSelect').disabled = true;
     document.getElementById('userRole').disabled = true;
-    document.getElementById('guidance').innerHTML = `
-      <div class="current-step" style="background:#f59e0b14;">
-        ⏳ Starting guide...
-      </div>
-    `;
 
-    setTimeout(executeStep, 500);
+    executeStep();
   };
 
   document.getElementById('userRole').addEventListener('change', () => {
@@ -417,7 +448,6 @@
     if (currentRole) document.getElementById('taskSection').style.display = 'block';
   });
 
-  // Close sidebar when clicking outside
   document.addEventListener('click', (e) => {
     if (!e.target.closest('.guide-sidebar') && !e.target.closest('.guide-tab') && sidebar.classList.contains('open')) {
       sidebar.classList.remove('open');
@@ -425,5 +455,5 @@
     }
   });
 
-  console.log('✓ Frappe Guide MVP loaded - Ready for investors!');
+  console.log('✓ Smart Frappe Guide MVP Ready!');
 })();
