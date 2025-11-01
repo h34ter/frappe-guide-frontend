@@ -7,15 +7,19 @@
 
   // STYLES
   const s = document.createElement('style');
-  s.textContent = `.gc{position:fixed;width:60px;height:60px;border:4px solid #3B82F6;border-radius:50%;background:rgba(59,130,246,0.2);box-shadow:0 0 40px rgba(59,130,246,0.9);z-index:999999;display:flex;align-items:center;justify-content:center;font-size:28px;pointer-events:none}.gp{position:fixed;bottom:30px;right:30px;width:380px;background:#0f172a;border:2px solid #3B82F6;border-radius:10px;padding:20px;z-index:999998;color:#f3f4f6;font-family:Arial;font-size:13px}.gp input,.gp select{width:100%;padding:8px;margin:8px 0;border:1px solid #334155;background:#1e293b;color:#f3f4f6;border-radius:6px;font-size:12px}.gp button{width:100%;padding:10px;background:#3B82F6;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:bold;margin:8px 0}.gh{display:none}.gs{padding:10px;background:rgba(59,130,246,0.1);border-left:3px solid #3B82F6;margin:10px 0;border-radius:4px}`;
+  s.textContent = `.gc{position:fixed;width:60px;height:60px;border:4px solid #3B82F6;border-radius:50%;background:rgba(59,130,246,0.2);box-shadow:0 0 40px rgba(59,130,246,0.9);z-index:999999;display:flex;align-items:center;justify-content:center;font-size:28px;pointer-events:none;transition:all 0.8s ease-out}.gp{position:fixed;bottom:30px;right:30px;width:380px;background:#0f172a;border:2px solid #3B82F6;border-radius:10px;padding:20px;z-index:999998;color:#f3f4f6;font-family:Arial;font-size:13px}.gp input,.gp select{width:100%;padding:8px;margin:8px 0;border:1px solid #334155;background:#1e293b;color:#f3f4f6;border-radius:6px;font-size:12px}.gp button{width:100%;padding:10px;background:#3B82F6;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:bold;margin:8px 0}.gh{display:none}.gs{padding:10px;background:rgba(59,130,246,0.1);border-left:3px solid #3B82F6;margin:10px 0;border-radius:4px}`;
   document.head.appendChild(s);
 
+  // CREATE CURSOR
   cursor = document.createElement('div');
   cursor.className = 'gc';
   cursor.innerHTML = '●';
   cursor.style.display = 'none';
+  cursor.style.left = '0px';
+  cursor.style.top = '0px';
   document.body.appendChild(cursor);
 
+  // CREATE PANEL
   panel = document.createElement('div');
   panel.className = 'gp';
   panel.innerHTML = `<h3 style="margin:0 0 15px 0;color:#3B82F6">🤖 Frappe Guide</h3><div id="s1"><p>What's your job?</p><input id="job" placeholder="e.g., Procurement Manager"><select id="ind"><option>Manufacturing</option><option>Retail</option><option>Services</option></select><button onclick="window.startFrappe()">Analyze</button></div><div id="s2" class="gh"><div id="info"></div><button onclick="window.nextStep()">Next Step →</button></div>`;
@@ -75,18 +79,24 @@
     for (let el of els) {
       const t = (el.textContent || el.getAttribute('placeholder') || '').toLowerCase();
       if (t.includes(search) && el.offsetHeight > 0) {
-        const r = el.getBoundingClientRect();
-        cursor.style.left = (r.left + r.width / 2 - 30) + 'px';
-        cursor.style.top = (r.top + r.height / 2 - 30) + 'px';
-        el.style.outline = '3px solid #3B82F6';
-        el.style.outlineOffset = '2px';
-        setTimeout(() => { el.style.outline = ''; }, 5000);
+        // SCROLL ELEMENT INTO VIEW
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+        // MOVE CURSOR TO ELEMENT
+        setTimeout(() => {
+          const rect = el.getBoundingClientRect();
+          const x = rect.left + rect.width / 2 - 30;
+          const y = rect.top + rect.height / 2 - 30;
+          
+          cursor.style.left = x + 'px';
+          cursor.style.top = y + 'px';
+        }, 300);
+
         break;
       }
     }
   }
 
   window.nextStep = showStep;
-  console.log('✅ Frappe Guide Loaded!');
+  console.log('✅ Frappe Guide Ready!');
 })();
