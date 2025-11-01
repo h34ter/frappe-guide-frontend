@@ -1,4 +1,4 @@
-// embed.js - AUTOMATED COACHING (NO ASKING)
+// embed.js - FIXED CURSOR + AUTOMATED COACHING
 (function() {
   'use strict';
   if (window.FRAPPE_GUIDE_LOADED) return;
@@ -14,11 +14,18 @@
   style.textContent = `
     * { box-sizing: border-box; }
     .guide-cursor {
-      position: fixed !important; width: 50px !important; height: 50px !important;
-      border: 3px solid #3B82F6 !important; border-radius: 50% !important;
-      background: rgba(59, 130, 246, 0.2) !important; pointer-events: none !important;
-      z-index: 999999 !important; align-items: center !important;
-      justify-content: center !important; font-size: 24px !important;
+      position: fixed !important; 
+      width: 50px !important; 
+      height: 50px !important;
+      border: 3px solid #3B82F6 !important; 
+      border-radius: 50% !important;
+      background: rgba(59, 130, 246, 0.2) !important; 
+      pointer-events: none !important;
+      z-index: 999999 !important; 
+      display: none !important;
+      align-items: center !important;
+      justify-content: center !important; 
+      font-size: 24px !important;
       box-shadow: 0 0 30px rgba(59, 130, 246, 0.8), inset 0 0 20px rgba(59, 130, 246, 0.3) !important;
       animation: pulse 2s infinite !important;
     }
@@ -157,29 +164,35 @@
     userProfile = { name, role, industry };
 
     // Get suggestions
-    const response = await fetch(`${API_URL}/onboarding-suggestions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ role, industry })
-    });
+    try {
+      const response = await fetch(`${API_URL}/onboarding-suggestions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role, industry })
+      });
 
-    const data = await response.json();
+      const data = await response.json();
 
-    document.getElementById('onboardingSection').classList.add('guide-hidden');
-    document.getElementById('suggestionsSection').classList.remove('guide-hidden');
+      document.getElementById('onboardingSection').classList.add('guide-hidden');
+      document.getElementById('suggestionsSection').classList.remove('guide-hidden');
 
-    document.getElementById('suggestionText').textContent = `${data.greeting}`;
+      document.getElementById('suggestionText').textContent = `${data.greeting}`;
 
-    const suggestionsList = document.getElementById('suggestionsList');
-    suggestionsList.innerHTML = data.suggestions
-      .map(s => `<button class="guide-suggestion-btn" onclick="window.selectTask('${s}')">${s}</button>`)
-      .join('');
+      const suggestionsList = document.getElementById('suggestionsList');
+      suggestionsList.innerHTML = data.suggestions
+        .map(s => `<button class="guide-suggestion-btn" onclick="window.selectTask('${s}')">${s}</button>`)
+        .join('');
+    } catch (err) {
+      alert('Error loading suggestions. Try again.');
+    }
   };
 
   window.selectTask = async function(task) {
     currentGoal = task;
     isGuiding = true;
     stepCount = 0;
+    
+    // Show cursor
     cursor.style.display = 'flex';
 
     document.getElementById('suggestionsSection').classList.add('guide-hidden');
@@ -227,7 +240,7 @@
       document.getElementById('guideProgress').textContent = `${data.stepProgress} • ${data.roleContext}`;
 
     } catch (err) {
-      stepDiv.innerHTML = `<div class="guide-step"><strong>⚠️</strong> ${err.message}</div>`;
+      stepDiv.innerHTML = `<div class="guide-step"><strong>⚠️</strong> Error: ${err.message}</div>`;
     }
   }
 
