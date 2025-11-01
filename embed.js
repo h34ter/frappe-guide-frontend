@@ -1,115 +1,144 @@
-(function() {
+(function () {
   if (window.GUIDE_LOADED) return;
   window.GUIDE_LOADED = true;
 
+  /*──────────  STYLES  ──────────*/
+  const css = `
+    .gc{position:fixed;width:60px;height:60px;border:4px solid #3B82F6;
+        border-radius:50%;background:rgba(59,130,246,.2);
+        box-shadow:0 0 40px rgba(59,130,246,.9);z-index:999999;
+        display:none;align-items:center;justify-content:center;font-size:28px;
+        pointer-events:none;transition:left .35s ease,top .35s ease;}
+    .gp{position:fixed;bottom:30px;right:30px;width:380px;background:#0f172a;
+        border:2px solid #3B82F6;border-radius:10px;padding:18px;z-index:999998;
+        color:#f3f4f6;font:13px/1.4 Arial;}
+    .gp input,.gp select{width:100%;padding:8px;margin:6px 0 10px;
+        border:1px solid #334155;background:#1e293b;color:#f3f4f6;
+        border-radius:6px;font-size:12px;}
+    .gp button{width:100%;padding:10px;background:#3B82F6;color:#fff;
+        border:none;border-radius:6px;cursor:pointer;font-weight:700;}
+    .gs{padding:10px;background:rgba(59,130,246,.12);border-left:3px solid #3B82F6;
+        margin-top:10px;border-radius:4px;}
+    [data-guide-highlight]{outline:4px solid #3B82F6;outline-offset:3px;
+        animation:fadeOutline 8s forwards;}
+    @keyframes fadeOutline{0%{outline-width:4px}90%{outline-width:4px}
+        100%{outline-width:0}}
+  `;
+  document.head.appendChild(Object.assign(document.createElement('style'), {textContent: css}));
+
+  /*──────────  DOM ELEMENTS  ──────────*/
   const API = 'https://frappe-guide-backend.onrender.com';
-  let tutorial = [], step = 0, panel, cursor;
+  let tutorial = [], keywords = [], index = 0, target = null;
 
-  // STYLES
-  const s = document.createElement('style');
-  s.textContent = `.gc{position:fixed;width:60px;height:60px;border:4px solid #3B82F6;border-radius:50%;background:rgba(59,130,246,0.2);box-shadow:0 0 40px rgba(59,130,246,0.9);z-index:999999;display:none;align-items:center;justify-content:center;font-size:28px;pointer-events:none}.gp{position:fixed;bottom:30px;right:30px;width:380px;background:#0f172a;border:2px solid #3B82F6;border-radius:10px;padding:20px;z-index:999998;color:#f3f4f6;font-family:Arial;font-size:13px}.gp input,.gp select{width:100%;padding:8px;margin:8px 0;border:1px solid #334155;background:#1e293b;color:#f3f4f6;border-radius:6px;font-size:12px}.gp button{width:100%;padding:10px;background:#3B82F6;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:bold;margin:8px 0}.gh{display:none}.gs{padding:10px;background:rgba(59,130,246,0.1);border-left:3px solid #3B82F6;margin:10px 0;border-radius:4px}`;
-  document.head.appendChild(s);
-
-  // CREATE CURSOR
-  cursor = document.createElement('div');
-  cursor.className = 'gc';
-  cursor.innerHTML = '●';
-  document.body.appendChild(cursor);
-
-  // CREATE PANEL
-  panel = document.createElement('div');
+  /* panel */
+  const panel = document.createElement('div');
   panel.className = 'gp';
-  panel.innerHTML = `<h3 style="margin:0 0 15px 0;color:#3B82F6">🤖 Frappe Guide</h3><div id="s1"><p>What's your job?</p><input id="job" placeholder="e.g., Procurement Manager"><select id="ind"><option>Manufacturing</option><option>Retail</option><option>Services</option></select><button onclick="window.startFrappe()">Analyze</button></div><div id="s2" class="gh"><div id="info"></div></div>`;
+  panel.innerHTML = `
+     <h3 style="margin:0 0 12px;color:#3B82F6">🤖  Frappe Guide</h3>
+     <div id="ask">
+        <p style="margin:0 0 4px">What's your job?</p>
+        <input id="job" placeholder="e.g. Procurement Manager">
+        <select id="ind">
+          <option>Manufacturing</option><option>Retail</option><option>Services</option>
+        </select>
+        <button id="go">Analyze</button>
+     </div>
+     <div id="run" style="display:none">
+        <div id="info" class="gs"></div>
+     </div>
+  `;
   document.body.appendChild(panel);
 
-  window.startFrappe = async function() {
-    const job = document.getElementById('job').value;
-    const ind = document.getElementById('ind').value;
-    if (!job) return alert('Enter job!');
+  /* cursor */
+  const cursor = document.body.appendChild(Object.assign(
+    document.createElement('div'), {className:'gc',innerHTML:'●'}));
 
-    document.getElementById('s1').classList.add('gh');
-    document.getElementById('s2').classList.remove('gh');
+  /*──────────  HELPERS  ──────────*/
+  const $ = sel => document.querySelector(sel);
+  const sleep = ms => new Promise(r=>setTimeout(r,ms));
 
-    // GET TUTORIAL
-    const r = await fetch(`${API}/analyze-job`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ job, industry: ind })
-    });
+  /** find DOM element whose label/placeholder/text includes keyword */
+  function findElement(keyword){
+      const lower = kw => kw?.toLowerCase() || '';
+      const match = el => {
+         const txt = lower(el.textContent);
+         const ph  = lower(el.getAttribute('placeholder'));
+         const dl  = lower(el.getAttribute('data-label'));
+         return [txt,ph,dl].some(x=>x.includes(keyword));
+      };
+      const elements = document.querySelectorAll('button, a, [role="button"], input, select');
+      return Array.from(elements).find(e=>match(e) && e.offsetParent);
+  }
 
-    const data = await r.json();
-    tutorial = data.tutorial || [];
-    step = 0;
+  function moveCursorTo(el){
+      const r = el.getBoundingClientRect();
+      cursor.style.left = (r.left + r.width/2 - 30) + 'px';
+      cursor.style.top  = (r.top  + r.height/2 - 30) + 'px';
+      cursor.style.display = 'flex';
+  }
 
-    console.log('Tutorial loaded:', tutorial);
+  async function showStep(){
+      if(index >= tutorial.length){
+          $('#info').innerHTML = '<strong>✅  Complete!</strong>';
+          cursor.style.display = 'none';
+          return;
+      }
+      const msg = `<strong>Step ${index+1}/${tutorial.length}</strong><br>${tutorial[index]}`;
+      $('#info').innerHTML = msg;
 
-    showStep();
+      /* highlight target element */
+      target?.removeAttribute('data-guide-highlight');
+      const kw = keywords[index].toLowerCase();
+      target = findElement(kw);
 
-    // LISTEN FOR EVERY CLICK ANYWHERE
-    document.addEventListener('click', () => {
-      setTimeout(showStep, 500);
-    }, true);
+      if(!target){
+          $('#info').innerHTML += `<br><em style="color:#f87171">I can’t find “${kw}” on this screen – try navigating manually.</em>`;
+          cursor.style.display='none';
+          return;
+      }
+      target.setAttribute('data-guide-highlight','');
+      target.scrollIntoView({behavior:'smooth',block:'center'});
+      await sleep(300);
+      moveCursorTo(target);
+  }
+
+  /*──────────  MAIN FLOW  ──────────*/
+  $('#go').onclick = async () => {
+      const job  = $('#job').value.trim();
+      if(!job) return alert('Enter job title');
+
+      $('#ask').style.display='none';
+      $('#run').style.display='block';
+      $('#info').innerHTML = '⏳  Thinking…';
+
+      const r = await fetch(API+'/analyze-job',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({job,industry:$('#ind').value})
+      }).then(r=>r.json());
+
+      tutorial = r.tutorial;
+      keywords = r.keywords;
+      index=0;
+      await showStep();
   };
 
-  async function showStep() {
-    if (step >= tutorial.length) {
-      document.getElementById('info').innerHTML = '<div class="gs"><strong>✅ Complete!</strong></div>';
-      cursor.style.display = 'none';
-      return;
-    }
+  /*──────────  CLICK‑TO‑ADVANCE  ──────────*/
+  document.addEventListener('click', async ev => {
+      /* ignore clicks inside our panel */
+      if(panel.contains(ev.target)) return;
 
-    const elements = Array.from(document.querySelectorAll('button, a, input, select, [role="button"]')).map(e => (e.textContent || e.getAttribute('placeholder') || '').slice(0, 40)).filter(e => e);
+      /* give the DOM time to change */
+      await sleep(500);
 
-    try {
-      const r = await fetch(`${API}/next-step`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ currentStep: step, totalSteps: tutorial.length, tutorial, pageElements: elements.slice(0, 20) })
-      });
-
-      const data = await r.json();
-      
-      document.getElementById('info').innerHTML = `<div class="gs"><strong>Step ${data.step}/${tutorial.length}</strong><br>${data.instruction}</div>`;
-
-      highlightElement(data.nextElement);
-      step++;
-    } catch (err) {
-      console.error('Error:', err);
-    }
-  }
-
-  function highlightElement(text) {
-    // REMOVE PREVIOUS OUTLINES
-    document.querySelectorAll('[data-guide-highlight]').forEach(el => {
-      el.style.outline = '';
-      el.removeAttribute('data-guide-highlight');
-    });
-
-    const search = text.toLowerCase();
-    const els = document.querySelectorAll('button, a, input, select, [role="button"]');
-
-    for (let el of els) {
-      const t = (el.textContent || el.getAttribute('placeholder') || '').toLowerCase();
-      if (t.includes(search) && el.offsetHeight > 0) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-
-        setTimeout(() => {
-          const rect = el.getBoundingClientRect();
-          cursor.style.left = (rect.left + rect.width / 2 - 30) + 'px';
-          cursor.style.top = (rect.top + rect.height / 2 - 30) + 'px';
-          cursor.style.display = 'flex';
-        }, 300);
-
-        setTimeout(() => {
-          el.style.outline = '4px solid #3B82F6';
-          el.style.outlineOffset = '4px';
-          el.setAttribute('data-guide-highlight', 'true');
-        }, 400);
-
-        break;
+      /* if the user clicked the expected element, advance */
+      if(target && (ev.target===target || ev.target.closest('[data-guide-highlight]'))){
+          index++;
+          await showStep();
+      }else{
+          /* user clicked elsewhere – keep current step, re‑scan & guide again */
+          await showStep();
       }
-    }
-  }
+  }, true);
 
-  console.log('✅ Frappe Guide Ready!');
+  console.log('✅ Frappe Guide Ready');
 })();
