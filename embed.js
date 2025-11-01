@@ -3,21 +3,12 @@
   window.GUIDE_LOADED = true;
 
   const API = 'https://frappe-guide-backend.onrender.com';
-  let tutorial = [], step = 0, cursor, panel;
+  let tutorial = [], step = 0, panel;
 
   // STYLES
   const s = document.createElement('style');
-  s.textContent = `.gc{position:fixed;width:60px;height:60px;border:4px solid #3B82F6;border-radius:50%;background:rgba(59,130,246,0.2);box-shadow:0 0 40px rgba(59,130,246,0.9);z-index:999999;display:flex;align-items:center;justify-content:center;font-size:28px;pointer-events:none;transition:all 0.8s ease-out}.gp{position:fixed;bottom:30px;right:30px;width:380px;background:#0f172a;border:2px solid #3B82F6;border-radius:10px;padding:20px;z-index:999998;color:#f3f4f6;font-family:Arial;font-size:13px}.gp input,.gp select{width:100%;padding:8px;margin:8px 0;border:1px solid #334155;background:#1e293b;color:#f3f4f6;border-radius:6px;font-size:12px}.gp button{width:100%;padding:10px;background:#3B82F6;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:bold;margin:8px 0}.gh{display:none}.gs{padding:10px;background:rgba(59,130,246,0.1);border-left:3px solid #3B82F6;margin:10px 0;border-radius:4px}`;
+  s.textContent = `.gp{position:fixed;bottom:30px;right:30px;width:380px;background:#0f172a;border:2px solid #3B82F6;border-radius:10px;padding:20px;z-index:999998;color:#f3f4f6;font-family:Arial;font-size:13px}.gp input,.gp select{width:100%;padding:8px;margin:8px 0;border:1px solid #334155;background:#1e293b;color:#f3f4f6;border-radius:6px;font-size:12px}.gp button{width:100%;padding:10px;background:#3B82F6;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:bold;margin:8px 0}.gh{display:none}.gs{padding:10px;background:rgba(59,130,246,0.1);border-left:3px solid #3B82F6;margin:10px 0;border-radius:4px}`;
   document.head.appendChild(s);
-
-  // CREATE CURSOR
-  cursor = document.createElement('div');
-  cursor.className = 'gc';
-  cursor.innerHTML = '●';
-  cursor.style.display = 'none';
-  cursor.style.left = '0px';
-  cursor.style.top = '0px';
-  document.body.appendChild(cursor);
 
   // CREATE PANEL
   panel = document.createElement('div');
@@ -32,7 +23,6 @@
 
     document.getElementById('s1').classList.add('gh');
     document.getElementById('s2').classList.remove('gh');
-    cursor.style.display = 'flex';
 
     // GET PERSONALIZED TUTORIAL
     const r = await fetch(`${API}/analyze-job`, {
@@ -53,7 +43,6 @@
   async function showStep() {
     if (step >= tutorial.length) {
       document.getElementById('info').innerHTML = '<div class="gs"><strong>✅ Complete!</strong> You now understand this Frappe feature.</div>';
-      cursor.style.display = 'none';
       return;
     }
 
@@ -73,24 +62,32 @@
   }
 
   function highlightElement(text) {
+    // REMOVE PREVIOUS OUTLINES
+    document.querySelectorAll('[data-guide-highlight]').forEach(el => {
+      el.style.outline = '';
+      el.removeAttribute('data-guide-highlight');
+    });
+
     const search = text.toLowerCase();
     const els = document.querySelectorAll('button, a, input, select, [role="button"]');
 
     for (let el of els) {
       const t = (el.textContent || el.getAttribute('placeholder') || '').toLowerCase();
       if (t.includes(search) && el.offsetHeight > 0) {
-        // SCROLL ELEMENT INTO VIEW
+        // SCROLL INTO VIEW
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
-        // MOVE CURSOR TO ELEMENT
+        // ADD BLUE OUTLINE WRAPPING
+        el.style.outline = '4px solid #3B82F6';
+        el.style.outlineOffset = '4px';
+        el.style.transition = 'outline 0.3s ease';
+        el.setAttribute('data-guide-highlight', 'true');
+
+        // AUTO-REMOVE OUTLINE AFTER 8 SECONDS
         setTimeout(() => {
-          const rect = el.getBoundingClientRect();
-          const x = rect.left + rect.width / 2 - 30;
-          const y = rect.top + rect.height / 2 - 30;
-          
-          cursor.style.left = x + 'px';
-          cursor.style.top = y + 'px';
-        }, 300);
+          el.style.outline = '';
+          el.removeAttribute('data-guide-highlight');
+        }, 8000);
 
         break;
       }
