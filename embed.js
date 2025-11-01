@@ -1,4 +1,4 @@
-// embed.js - WITH HARDCODED WORKFLOWS
+// embed.js - COMPLETE FIXED VERSION
 const API_URL = 'https://frappe-guide-backend.onrender.com';
 let currentRole = null;
 let currentPhase = 1;
@@ -8,7 +8,11 @@ let currentWorkflow = null;
 let waitingForClick = false;
 let targetElement = null;
 
-// PREDEFINED WORKFLOWS - Exact steps, no AI guessing
+// Cursor position tracking
+let cursorX = window.innerWidth / 2;
+let cursorY = window.innerHeight / 2;
+
+// PREDEFINED WORKFLOWS
 const WORKFLOWS = {
   'purchase order': [
     { instruction: 'Click on the "Buying" module in the sidebar', selector: '[data-label="Buying"], a[href*="buying"]' },
@@ -134,6 +138,7 @@ window.startGuidance = function() {
   currentWorkflow = WORKFLOWS[task];
   currentStepIndex = 0;
   isInstrucing = true;
+  waitingForClick = false;
 
   document.getElementById('progressBar').style.display = 'block';
   document.getElementById('totalSteps').textContent = currentWorkflow.length;
@@ -181,7 +186,8 @@ function executeCurrentStep() {
     const targetX = rect.left + rect.width / 2;
     const targetY = rect.top + rect.height / 2;
 
-    animateCursor(cursor.offsetLeft || window.innerWidth / 2, cursor.offsetTop || window.innerHeight / 2, targetX, targetY, 1000);
+    // Animate cursor from current position to target
+    animateCursor(cursorX, cursorY, targetX, targetY, 1000);
 
     setTimeout(() => {
       let tooltipX = targetX + 20;
@@ -198,7 +204,7 @@ function executeCurrentStep() {
       waitingForClick = true;
     }, 1000);
   } else {
-    // Element not found - skip or show warning
+    // Element not found
     document.getElementById('currentGuidance').innerHTML += `
       <div style="background:#f59e0b14; border-left:3px solid #f59e0b; padding:8px; margin-top:8px; font-size:12px;">
         ⚠️ Can't find this element on current page. Try navigating manually or click "Skip"
@@ -210,36 +216,38 @@ function executeCurrentStep() {
 
 window.skipStep = function() {
   currentStepIndex++;
+  waitingForClick = false;
+  tooltip.style.display = 'none';
   executeCurrentStep();
 };
 
 function animateCursor(startX, startY, endX, endY, duration = 1000) {
   const startTime = Date.now();
+  cursorX = startX;
+  cursorY = startY;
   
   function step() {
     const elapsed = Date.now() - startTime;
     const progress = Math.min(elapsed / duration, 1);
     const easeProgress = progress < 0.5 ? 2 * progress * progress : -1 + (4 - 2 * progress) * progress;
 
-    const currentX = startX + (endX - startX) * easeProgress;
-    const currentY = startY + (endY - startY) * easeProgress;
+    cursorX = startX + (endX - startX) * easeProgress;
+    cursorY = startY + (endY - startY) * easeProgress;
 
-    cursor.style.left = (currentX - 20) + 'px';
-    cursor.style.top = (currentY - 20) + 'px';
+    cursor.style.left = (cursorX - 20) + 'px';
+    cursor.style.top = (cursorY - 20) + 'px';
     cursor.style.display = 'block';
     cursor.style.boxShadow = `0 0 ${20 + progress * 10}px rgba(59, 130, 246, ${0.5 + progress * 0.3})`;
 
     if (progress < 1) {
       requestAnimationFrame(step);
-    } else {
-      cursor.style.animation = 'pulse 0.6s ease-in-out 2';
     }
   }
 
   requestAnimationFrame(step);
 }
 
-// STRICT CLICK DETECTION - Only exact element
+// STRICT CLICK DETECTION
 document.addEventListener('click', (e) => {
   if (!waitingForClick || !targetElement) return;
 
@@ -248,14 +256,12 @@ document.addEventListener('click', (e) => {
     waitingForClick = false;
     tooltip.style.display = 'none';
     
-    // Show success
     document.getElementById('currentGuidance').innerHTML = `
       <div class="current-step" style="background:#10b98114; border-left-color:#10b981;">
         ✅ Perfect! Moving to next step...
       </div>
     `;
 
-    // Move to next step after 800ms
     setTimeout(() => {
       currentStepIndex++;
       executeCurrentStep();
@@ -277,4 +283,116 @@ document.getElementById('userRole').addEventListener('change', (e) => {
   if (currentRole) window.loadPhases(currentRole);
 });
 
-console.log('✓ Frappe Guide loaded with predefined workflows!');
+console.log('✓ Frappe Guide loaded with fixed cursor tracking!');
+
+
+
+
+// Key additions for embed.js:
+
+// ADAPTIVE LEARNING SYSTEM
+class AdaptiveTrainer {
+  constructor(userRole, experience) {
+    this.userRole = userRole;
+    this.experience = experience;
+    this.adaptiveLevel = experience; // 1-5
+    this.mistakePatterns = {};
+    this.learningStyle = 'visual'; // Can be adapted
+  }
+
+  async generateDynamicWorkflow(task) {
+    const response = await fetch(`${API_URL}/generate-workflow`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        task,
+        role: this.userRole,
+        experience: this.experience,
+        sessionId: window.sessionId
+      })
+    });
+    return response.json();
+  }
+
+  trackError(error, action) {
+    this.mistakePatterns[action] = (this.mistakePatterns[action] || 0) + 1;
+    return fetch(`${API_URL}/handle-error`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        error,
+        action,
+        role: this.userRole,
+        sessionId: window.sessionId
+      })
+    }).then(r => r.json());
+  }
+
+  adaptDifficulty() {
+    const avgErrors = Object.values(this.mistakePatterns).reduce((a, b) => a + b, 0) / Object.keys(this.mistakePatterns).length;
+    if (avgErrors > 2) this.adaptiveLevel = Math.max(1, this.adaptiveLevel - 1);
+    if (avgErrors < 0.5) this.adaptiveLevel = Math.min(5, this.adaptiveLevel + 1);
+  }
+}
+
+// CONTEXT AWARENESS
+class ContextAnalyzer {
+  detectCurrentModule() {
+    const url = window.location.href;
+    if (url.includes('/buying')) return 'Buying';
+    if (url.includes('/selling')) return 'Selling';
+    if (url.includes('/stock')) return 'Stock';
+    if (url.includes('/accounting')) return 'Accounting';
+    return 'Unknown';
+  }
+
+  detectFormState() {
+    return {
+      isSaved: !!document.querySelector('[data-docstatus="1"]'),
+      hasErrors: !!document.querySelector('.alert-danger'),
+      currentForm: document.querySelector('[data-doctype]')?.getAttribute('data-doctype') || null
+    };
+  }
+}
+
+// ERROR RECOVERY
+class ErrorRecovery {
+  static async handleStepFailure(step, attempt = 1) {
+    if (attempt > 3) return { recoverable: false, reason: 'Max retries exceeded' };
+    
+    // Try alternative selectors
+    const alternatives = this.getAlternativeSelectors(step.selector);
+    for (let alt of alternatives) {
+      if (document.querySelector(alt)) {
+        return { recoverable: true, newSelector: alt };
+      }
+    }
+    
+    return { recoverable: false, reason: 'Element not found' };
+  }
+
+  static getAlternativeSelectors(original) {
+    // Fallback selector strategies
+    return [
+      original,
+      original.replace('[data-label=', '[title='),
+      original.split(',')[0], // Try first option
+      'button:contains("New")',
+      '.btn-primary:first'
+    ];
+  }
+}
+
+// VOICE & MULTIMODAL (Optional but recommended)
+class VoiceGuide {
+  static async speakInstruction(text) {
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 0.9;
+    utterance.pitch = 1.0;
+    window.speechSynthesis.speak(utterance);
+  }
+}
+
+// Initialize trainer
+window.trainer = new AdaptiveTrainer(currentRole, experienceLevel);
+window.contextAnalyzer = new ContextAnalyzer();
