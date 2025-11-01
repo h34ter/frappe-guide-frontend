@@ -3,7 +3,7 @@
   window.GUIDE_LOADED = true;
 
   const API = 'https://frappe-guide-backend.onrender.com';
-  let tutorial = [], step = 0, panel;
+  let tutorial = [], step = 0, panel, lastURL = '', scanInterval;
 
   // STYLES
   const s = document.createElement('style');
@@ -13,7 +13,7 @@
   // CREATE PANEL
   panel = document.createElement('div');
   panel.className = 'gp';
-  panel.innerHTML = `<h3 style="margin:0 0 15px 0;color:#3B82F6">🤖 Frappe Guide</h3><div id="s1"><p>What's your job?</p><input id="job" placeholder="e.g., Procurement Manager"><select id="ind"><option>Manufacturing</option><option>Retail</option><option>Services</option></select><button onclick="window.startFrappe()">Analyze</button></div><div id="s2" class="gh"><div id="info"></div><button onclick="window.nextStep()">Next Step →</button></div>`;
+  panel.innerHTML = `<h3 style="margin:0 0 15px 0;color:#3B82F6">🤖 Frappe Guide</h3><div id="s1"><p>What's your job?</p><input id="job" placeholder="e.g., Procurement Manager"><select id="ind"><option>Manufacturing</option><option>Retail</option><option>Services</option></select><button onclick="window.startFrappe()">Analyze</button></div><div id="s2" class="gh"><div id="info"></div></div>`;
   document.body.appendChild(panel);
 
   window.startFrappe = async function() {
@@ -34,15 +34,36 @@
     const data = await r.json();
     tutorial = data.tutorial || [];
     step = 0;
+    lastURL = window.location.href;
 
     document.getElementById('info').innerHTML = `<div class="gs"><strong>📚 Your Learning Path</strong><br>Modules: ${data.modules.join(', ')}<br>Features: ${data.features.join(', ')}<br><br><strong>First lesson:</strong> ${data.firstStep}<br>${data.why}</div>`;
 
-    showStep();
+    // START AUTO-SCAN
+    scanForClicks();
+    scanInterval = setInterval(scanForClicks, 1500);
   };
+
+  async function scanForClicks() {
+    if (step >= tutorial.length) {
+      document.getElementById('info').innerHTML = '<div class="gs"><strong>✅ Complete!</strong> You now understand this Frappe feature.</div>';
+      clearInterval(scanInterval);
+      return;
+    }
+
+    const currentURL = window.location.href;
+    const urlChanged = currentURL !== lastURL;
+
+    if (urlChanged) {
+      lastURL = currentURL;
+      // PAGE CHANGED - SHOW NEXT STEP
+      await showStep();
+    }
+  }
 
   async function showStep() {
     if (step >= tutorial.length) {
       document.getElementById('info').innerHTML = '<div class="gs"><strong>✅ Complete!</strong> You now understand this Frappe feature.</div>';
+      clearInterval(scanInterval);
       return;
     }
 
@@ -78,22 +99,17 @@
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
         // ADD BLUE OUTLINE WRAPPING
-        el.style.outline = '4px solid #3B82F6';
-        el.style.outlineOffset = '4px';
-        el.style.transition = 'outline 0.3s ease';
-        el.setAttribute('data-guide-highlight', 'true');
-
-        // AUTO-REMOVE OUTLINE AFTER 8 SECONDS
         setTimeout(() => {
-          el.style.outline = '';
-          el.removeAttribute('data-guide-highlight');
-        }, 8000);
+          el.style.outline = '4px solid #3B82F6';
+          el.style.outlineOffset = '4px';
+          el.style.transition = 'outline 0.3s ease';
+          el.setAttribute('data-guide-highlight', 'true');
+        }, 100);
 
         break;
       }
     }
   }
 
-  window.nextStep = showStep;
-  console.log('✅ Frappe Guide Ready!');
+  console.log('✅ Frappe Guide Ready - Auto-Scan Active!');
 })();
