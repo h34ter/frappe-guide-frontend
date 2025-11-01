@@ -17,7 +17,7 @@
       position: fixed !important; width: 50px !important; height: 50px !important;
       border: 3px solid #3B82F6 !important; border-radius: 50% !important;
       background: rgba(59, 130, 246, 0.2) !important; pointer-events: none !important;
-      z-index: 999999 !important; display: none !important; align-items: center !important;
+      z-index: 999999 !important; align-items: center !important;
       justify-content: center !important; font-size: 24px !important;
       box-shadow: 0 0 30px rgba(59, 130, 246, 0.8), inset 0 0 20px rgba(59, 130, 246, 0.3) !important;
       animation: pulse 2s infinite !important;
