@@ -1,4 +1,4 @@
-// embed.js - SMART TEXT-BASED GUIDE (Works on ANY page)
+// embed.js - FINAL MVP - PRODUCTION READY
 (function() {
   'use strict';
 
@@ -176,6 +176,7 @@
     .current-step strong {
       color: #3B82F6 !important;
       display: block !important;
+      margin-bottom: 6px !important;
     }
 
     .guide-status {
@@ -246,7 +247,7 @@
     const search = searchText.toLowerCase().trim();
 
     for (let btn of buttons) {
-      const text = btn.textContent.toLowerCase();
+      const text = btn.textContent.toLowerCase().trim();
       if (btn.offsetHeight > 0 && text.includes(search)) {
         return btn;
       }
@@ -257,11 +258,9 @@
   function findFieldByLabel(fieldName) {
     const search = fieldName.toLowerCase();
     
-    // Try data-fieldname first
     let field = document.querySelector(`[data-fieldname*="${fieldName}"]`);
     if (field && field.offsetHeight > 0) return field;
 
-    // Try labels
     const labels = document.querySelectorAll('label, [data-label]');
     for (let label of labels) {
       if (label.textContent.toLowerCase().includes(search)) {
@@ -273,14 +272,13 @@
       }
     }
 
-    // Last resort - find by name attribute
     field = document.querySelector(`input[name*="${fieldName}"], select[name*="${fieldName}"]`);
     if (field && field.offsetHeight > 0) return field;
 
     return null;
   }
 
-  // ============ WORKFLOWS (TEXT-BASED) ============
+  // ============ WORKFLOWS ============
   const WORKFLOWS = {
     'purchase order': [
       { step: 1, name: 'Click Purchase Order', findBy: 'text', text: 'Purchase Order', action: 'click' },
@@ -335,7 +333,7 @@
     requestAnimationFrame(frame);
   }
 
-  // ============ EXECUTE STEP ============
+  // ============ SHOW STEP (WITH SCROLL FIX) ============
   function showStep(step) {
     let element = null;
 
@@ -356,7 +354,7 @@
       setTimeout(() => {
         element = step.findBy === 'text' ? findButtonByText(step.text) : findFieldByLabel(step.text);
         if (element && element.offsetHeight > 0) {
-          showStep(step); // Retry
+          showStep(step);
         } else {
           document.getElementById('guidance').innerHTML = `
             <div class="current-step" style="background:#ef444414; border-left-color:#ef4444;">
@@ -369,41 +367,45 @@
       return;
     }
 
-    // Found element - animate cursor to it
-    const rect = element.getBoundingClientRect();
-    const targetX = rect.left + rect.width / 2;
-    const targetY = rect.top + rect.height / 2;
+    // ====== SCROLL INTO VIEW FIRST ======
+    element.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
 
-    animateCursor(cursorX, cursorY, targetX, targetY, 600);
-
+    // Wait for scroll to complete
     setTimeout(() => {
-      tooltip.textContent = `${step.action === 'click' ? 'Click' : 'Enter'}: ${step.name}`;
-      tooltip.style.left = Math.max(10, targetX + 20) + 'px';
-      tooltip.style.top = Math.max(60, targetY - 50) + 'px';
-      tooltip.style.display = 'block';
+      const rect = element.getBoundingClientRect();
+      const targetX = rect.left + rect.width / 2;
+      const targetY = rect.top + rect.height / 2;
 
-      document.getElementById('guidance').innerHTML = `
-        <div class="current-step">
-          <strong>Step ${currentStepIndex + 1}/${workflowSteps.length}</strong>
-          <p>${step.name}</p>
-        </div>
-      `;
+      animateCursor(cursorX, cursorY, targetX, targetY, 600);
 
-      // Handle click
-      if (clickHandler) document.removeEventListener('click', clickHandler, true);
+      setTimeout(() => {
+        tooltip.textContent = `${step.action === 'click' ? 'Click' : 'Enter'}: ${step.name}`;
+        tooltip.style.left = Math.max(10, targetX + 20) + 'px';
+        tooltip.style.top = Math.max(60, targetY - 50) + 'px';
+        tooltip.style.display = 'block';
 
-      clickHandler = (e) => {
-        const clicked = e.target.closest('button, a, [role="button"], input, select');
-        if (clicked === element || element.contains(clicked)) {
-          tooltip.style.display = 'none';
-          currentStepIndex++;
-          document.removeEventListener('click', clickHandler, true);
-          setTimeout(executeStep, 500);
-        }
-      };
+        document.getElementById('guidance').innerHTML = `
+          <div class="current-step">
+            <strong>Step ${currentStepIndex + 1}/${workflowSteps.length}</strong>
+            <p>${step.name}</p>
+          </div>
+        `;
 
-      document.addEventListener('click', clickHandler, true);
-    }, 600);
+        if (clickHandler) document.removeEventListener('click', clickHandler, true);
+
+        clickHandler = (e) => {
+          const clicked = e.target.closest('button, a, [role="button"], input, select');
+          if (clicked === element || element.contains(clicked)) {
+            tooltip.style.display = 'none';
+            currentStepIndex++;
+            document.removeEventListener('click', clickHandler, true);
+            setTimeout(executeStep, 500);
+          }
+        };
+
+        document.addEventListener('click', clickHandler, true);
+      }, 600);
+    }, 500); // Wait for scrollIntoView
   }
 
   function executeStep() {
@@ -455,5 +457,5 @@
     }
   });
 
-  console.log('✓ Smart Frappe Guide MVP Ready!');
+  console.log('✓ Frappe Guide MVP - Production Ready!');
 })();
