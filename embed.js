@@ -1,4 +1,4 @@
-// embed.js - CURSOR + AI FUSION (REAL REPLACEMENT)
+// embed.js - AUTO-DETECTS CLICKS + CONTINUOUS GUIDANCE
 (function() {
   'use strict';
   if (window.FRAPPE_GUIDE_LOADED) return;
@@ -7,166 +7,151 @@
   const API_URL = 'https://frappe-guide-backend.onrender.com';
   let currentGoal = '';
   let isGuiding = false;
+  let lastClickedElement = null;
 
   const style = document.createElement('style');
   style.textContent = `
     .guide-cursor {
-      position: fixed !important; width: 60px !important; height: 60px !important;
-      border: 4px solid #10B981 !important; border-radius: 50% !important;
-      background: rgba(16, 185, 129, 0.25) !important; pointer-events: none !important;
-      z-index: 999999 !important; display: flex !important; align-items: center !important;
-      justify-content: center !important; font-size: 32px !important;
-      box-shadow: 0 0 50px rgba(16, 185, 129, 0.9) !important;
-    }
-    .guide-label {
-      position: fixed !important; background: #10B981 !important; color: white !important;
-      padding: 8px 14px !important; border-radius: 8px !important; font-size: 12px !important;
-      font-weight: 700 !important; z-index: 999998 !important; white-space: nowrap !important;
-      box-shadow: 0 4px 20px rgba(16, 185, 129, 0.4) !important;
+      position: fixed !important; width: 40px !important; height: 40px !important;
+      border: 3px solid #3B82F6 !important; border-radius: 50% !important;
+      background: rgba(59, 130, 246, 0.15) !important; pointer-events: none !important;
+      z-index: 999999 !important; display: none !important; align-items: center !important;
+      justify-content: center !important; font-size: 20px !important;
+      box-shadow: 0 0 25px rgba(59, 130, 246, 0.7) !important;
     }
     .guide-panel {
-      position: fixed !important; bottom: 20px !important; right: 20px !important;
-      width: 380px !important; background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%) !important;
-      border: 2px solid #10B981 !important; border-radius: 16px !important; padding: 20px !important;
-      z-index: 999997 !important; box-shadow: 0 25px 80px rgba(0,0,0,0.6) !important;
-      font-family: -apple-system, sans-serif !important; color: #fff !important;
+      position: fixed !important; bottom: 30px !important; right: 30px !important;
+      width: 360px !important; background: linear-gradient(135deg, #111827 0%, #1F2937 100%) !important;
+      border: 2px solid #3B82F6 !important; border-radius: 14px !important; padding: 20px !important;
+      z-index: 999998 !important; box-shadow: 0 20px 60px rgba(0,0,0,0.5) !important;
+      font-family: -apple-system, sans-serif !important; color: #F3F4F6 !important;
     }
     .guide-input {
-      width: 100% !important; padding: 12px !important; background: #1e293b !important;
-      border: 2px solid #334155 !important; border-radius: 10px !important; color: #fff !important;
-      font-size: 14px !important; margin-bottom: 12px !important; box-sizing: border-box !important;
+      width: 100% !important; padding: 12px !important; background: #374151 !important;
+      border: 1px solid #4B5563 !important; border-radius: 8px !important; color: #F3F4F6 !important;
+      font-size: 13px !important; margin-bottom: 10px !important; box-sizing: border-box !important;
     }
     .guide-btn {
-      width: 100% !important; padding: 12px !important; background: #10B981 !important;
-      border: none !important; border-radius: 10px !important; color: white !important;
-      font-weight: 700 !important; cursor: pointer !important; font-size: 14px !important;
+      width: 100% !important; padding: 12px !important; background: #3B82F6 !important;
+      border: none !important; border-radius: 8px !important; color: white !important;
+      font-weight: 600 !important; cursor: pointer !important; font-size: 13px !important;
     }
-    .guide-btn:hover { background: #059669 !important; }
-    .guide-status {
-      margin-top: 12px !important; padding: 10px !important; background: rgba(16, 185, 129, 0.1) !important;
-      border-radius: 8px !important; font-size: 12px !important; color: #6ee7b7 !important;
-      text-align: center !important; line-height: 1.5 !important;
+    .guide-btn:hover { background: #2563EB !important; }
+    .guide-step {
+      margin-top: 15px !important; padding: 12px !important; background: rgba(59, 130, 246, 0.1) !important;
+      border-left: 3px solid #3B82F6 !important; border-radius: 4px !important; font-size: 13px !important;
+      line-height: 1.6 !important; color: #E5E7EB !important;
     }
+    .guide-step strong { color: #60A5FA !important; }
   `;
   document.head.appendChild(style);
 
   const cursor = document.createElement('div');
   cursor.className = 'guide-cursor';
-  cursor.innerHTML = '👆';
+  cursor.innerHTML = '●';
   document.body.appendChild(cursor);
-
-  const label = document.createElement('div');
-  label.className = 'guide-label';
-  document.body.appendChild(label);
 
   const panel = document.createElement('div');
   panel.className = 'guide-panel';
   panel.innerHTML = `
-    <h3 style="margin:0 0 15px 0; color:#10B981; font-size:16px;">🤖 AI Guide</h3>
+    <h3 style="margin:0 0 15px 0; font-size:16px; color:#3B82F6; font-weight:700;">🤖 AI Guide</h3>
     <input class="guide-input" id="guideGoal" placeholder="What do you want to do?">
-    <button class="guide-btn" onclick="window.startGuide()">Let's Go</button>
-    <div class="guide-status" id="guideStatus">Ready to guide you!</div>
+    <button class="guide-btn" onclick="window.startGuide()">Start Guidance</button>
+    <div id="guideStep"></div>
   `;
   document.body.appendChild(panel);
 
-  function findAllElements() {
-    const buttons = [];
-    document.querySelectorAll('button, a, input, select, [role="button"]').forEach(el => {
-      if (el.offsetHeight > 0) {
-        buttons.push({
-          el,
-          text: el.textContent.toLowerCase().trim(),
-          placeholder: (el.getAttribute('placeholder') || '').toLowerCase(),
-          type: el.tagName.toLowerCase()
-        });
-      }
-    });
-    return buttons;
-  }
+  // INTERCEPT ALL CLICKS
+  document.addEventListener('click', async (e) => {
+    if (!isGuiding || e.target.closest('.guide-panel')) return;
 
-  async function guideTowards(goal) {
-    const status = document.getElementById('guideStatus');
-    status.textContent = '🔍 Analyzing page...';
+    lastClickedElement = e.target;
+    const clickedText = e.target.textContent?.slice(0, 50) || e.target.getAttribute('placeholder') || '';
 
-    const elements = findAllElements();
-    const elementList = elements.slice(0, 20).map(e => `${e.text || e.placeholder} (${e.type})`).join(', ');
+    if (clickedText) {
+      await continueGuidance(clickedText);
+    }
+  }, true);
+
+  async function continueGuidance(whatUserClicked) {
+    const stepDiv = document.getElementById('guideStep');
+    stepDiv.innerHTML = `<div class="guide-step"><strong>✓ You clicked:</strong> ${whatUserClicked}<br><strong>⏳</strong> AI is thinking...</div>`;
 
     try {
-      const response = await fetch(`${API_URL}/next-step`, {
+      const allElements = [];
+      document.querySelectorAll('button, a, input, select').forEach(el => {
+        if (el.offsetHeight > 0) {
+          allElements.push(el.textContent?.slice(0, 40) || el.getAttribute('placeholder') || '');
+        }
+      });
+
+      const response = await fetch(`${API_URL}/next-step-auto`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          goal,
-          visibleElements: elementList,
-          currentUrl: window.location.href
+          goal: currentGoal,
+          userJustClicked: whatUserClicked,
+          pageUrl: window.location.href,
+          availableElements: allElements.slice(0, 30)
         })
       });
 
       const data = await response.json();
-      const targetText = data.nextClick.toLowerCase();
 
-      // Find matching element
-      let target = null;
-      for (let elem of elements) {
-        if (elem.text.includes(targetText) || elem.placeholder.includes(targetText)) {
-          target = elem.el;
-          break;
-        }
-      }
+      stepDiv.innerHTML = `<div class="guide-step"><strong>${data.emoji} Next:</strong> ${data.instruction}</div>`;
 
-      if (!target) {
-        status.textContent = `❌ Can't find "${targetText}" - ${data.reason}`;
-        return;
-      }
-
-      // Scroll into view
-      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-
-      setTimeout(() => {
-        const rect = target.getBoundingClientRect();
-        const cx = rect.left + rect.width / 2;
-        const cy = rect.top + rect.height / 2;
-
-        // Animate cursor
-        cursor.style.left = (cx - 30) + 'px';
-        cursor.style.top = (cy - 30) + 'px';
-        cursor.style.display = 'flex';
-
-        // Show label
-        label.textContent = data.instruction;
-        label.style.left = (cx + 50) + 'px';
-        label.style.top = (cy - 20) + 'px';
-        label.style.display = 'block';
-
-        status.textContent = '✅ ' + data.instruction;
-
-        // Wait for click
-        const clickListener = (e) => {
-          if (e.target === target || target.contains(e.target)) {
-            document.removeEventListener('click', clickListener, true);
-            target.click();
-            cursor.style.display = 'none';
-            label.style.display = 'none';
-            status.textContent = '✅ Clicked! What next?';
-            isGuiding = false;
-          }
-        };
-
-        document.addEventListener('click', clickListener, true);
-
-      }, 500);
+      // Find and highlight the next element
+      findAndHighlight(data.nextElement);
 
     } catch (err) {
-      status.textContent = '❌ Error: ' + err.message;
+      stepDiv.innerHTML = `<div class="guide-step"><strong>⚠️</strong> ${err.message}</div>`;
+    }
+  }
+
+  function findAndHighlight(elementText) {
+    if (!elementText) return;
+
+    const search = elementText.toLowerCase();
+    const allEls = document.querySelectorAll('button, a, input, select, [role="button"]');
+
+    for (let el of allEls) {
+      const text = (el.textContent || el.getAttribute('placeholder') || '').toLowerCase();
+      if (text.includes(search) && el.offsetHeight > 0) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+        setTimeout(() => {
+          const rect = el.getBoundingClientRect();
+          cursor.style.left = (rect.left + rect.width / 2 - 20) + 'px';
+          cursor.style.top = (rect.top + rect.height / 2 - 20) + 'px';
+          cursor.style.display = 'flex';
+
+          el.style.outline = '3px solid #3B82F6';
+          el.style.outlineOffset = '3px';
+
+          setTimeout(() => {
+            el.style.outline = '';
+          }, 4000);
+        }, 300);
+
+        return;
+      }
     }
   }
 
   window.startGuide = function() {
     currentGoal = document.getElementById('guideGoal').value;
-    if (!currentGoal) return alert('Tell me what you want to do!');
+    if (!currentGoal) return alert('Tell me your goal!');
+
     isGuiding = true;
-    guideTowards(currentGoal);
+    cursor.style.display = 'flex';
+
+    document.getElementById('guideStep').innerHTML = `
+      <div class="guide-step">
+        <strong>🎯 Goal:</strong> ${currentGoal}
+        <br><strong>👆</strong> Now just click things and I'll guide you!
+      </div>
+    `;
   };
 
-  console.log('✅ AI Visual Guide Ready!');
+  console.log('✅ AI Auto-Guide Ready - Click naturally, I\'ll guide you!');
 })();
