@@ -1,4 +1,4 @@
-// embed.js - FIXED CURSOR + AUTOMATED COACHING
+// embed.js - COMPLETE FIXED VERSION - CURSOR WORKS
 (function() {
   'use strict';
   if (window.FRAPPE_GUIDE_LOADED) return;
@@ -163,7 +163,6 @@
 
     userProfile = { name, role, industry };
 
-    // Get suggestions
     try {
       const response = await fetch(`${API_URL}/onboarding-suggestions`, {
         method: 'POST',
@@ -175,7 +174,6 @@
 
       document.getElementById('onboardingSection').classList.add('guide-hidden');
       document.getElementById('suggestionsSection').classList.remove('guide-hidden');
-
       document.getElementById('suggestionText').textContent = `${data.greeting}`;
 
       const suggestionsList = document.getElementById('suggestionsList');
@@ -183,7 +181,7 @@
         .map(s => `<button class="guide-suggestion-btn" onclick="window.selectTask('${s}')">${s}</button>`)
         .join('');
     } catch (err) {
-      alert('Error loading suggestions. Try again.');
+      alert('Error loading suggestions');
     }
   };
 
@@ -191,8 +189,6 @@
     currentGoal = task;
     isGuiding = true;
     stepCount = 0;
-    
-    // Show cursor
     cursor.style.display = 'flex';
 
     document.getElementById('suggestionsSection').classList.add('guide-hidden');
@@ -236,7 +232,26 @@
 
       stepDiv.innerHTML = `<div class="guide-step"><strong>${data.roleEmoji}</strong> <strong>${data.personalizedInstruction}</strong></div>`;
 
-      findAndHighlight(data.nextElement);
+      // HIGHLIGHT TARGET ELEMENT - INLINED
+      const search = data.nextElement.toLowerCase();
+      const allEls = document.querySelectorAll('button, a, input, select, [role="button"]');
+      for (let el of allEls) {
+        const text = (el.textContent || el.getAttribute('placeholder') || '').toLowerCase();
+        if (text.includes(search) && el.offsetHeight > 0) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          setTimeout(() => {
+            const rect = el.getBoundingClientRect();
+            cursor.style.left = (rect.left + rect.width / 2 - 25) + 'px';
+            cursor.style.top = (rect.top + rect.height / 2 - 25) + 'px';
+            cursor.style.display = 'flex';
+            el.style.outline = '3px solid #3B82F6';
+            el.style.outlineOffset = '4px';
+            setTimeout(() => { el.style.outline = ''; }, 5000);
+          }, 300);
+          break;
+        }
+      }
+
       document.getElementById('guideProgress').textContent = `${data.stepProgress} • ${data.roleContext}`;
 
     } catch (err) {
@@ -244,28 +259,5 @@
     }
   }
 
-  function findAndHighlight(elementText) {
-    if (!elementText) return;
-    const search = elementText.toLowerCase();
-    const allEls = document.querySelectorAll('button, a, input, select, [role="button"]');
-
-    for (let el of allEls) {
-      const text = (el.textContent || el.getAttribute('placeholder') || '').toLowerCase();
-      if (text.includes(search) && el.offsetHeight > 0) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        setTimeout(() => {
-          const rect = el.getBoundingClientRect();
-          cursor.style.left = (rect.left + rect.width / 2 - 25) + 'px';
-          cursor.style.top = (rect.top + rect.height / 2 - 25) + 'px';
-          cursor.style.display = 'flex';
-          el.style.outline = '3px solid #3B82F6';
-          el.style.outlineOffset = '4px';
-          setTimeout(() => { el.style.outline = ''; }, 5000);
-        }, 300);
-        return;
-      }
-    }
-  }
-
-  console.log('✅ Automated AI Coach Ready!');
+  console.log('✅ Frappe AI Coach Ready - Cursor Fixed!');
 })();
