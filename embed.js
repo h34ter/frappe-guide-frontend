@@ -1,4 +1,4 @@
-// embed.js - AI VISION GUIDED MODE
+// embed.js - CURSOR + AI FUSION (REAL REPLACEMENT)
 (function() {
   'use strict';
   if (window.FRAPPE_GUIDE_LOADED) return;
@@ -6,60 +6,46 @@
 
   const API_URL = 'https://frappe-guide-backend.onrender.com';
   let currentGoal = '';
-  let conversationHistory = [];
+  let isGuiding = false;
 
   const style = document.createElement('style');
   style.textContent = `
     .guide-cursor {
-      position: fixed !important; width: 50px !important; height: 50px !important;
+      position: fixed !important; width: 60px !important; height: 60px !important;
       border: 4px solid #10B981 !important; border-radius: 50% !important;
-      background: rgba(16, 185, 129, 0.2) !important; pointer-events: none !important;
+      background: rgba(16, 185, 129, 0.25) !important; pointer-events: none !important;
       z-index: 999999 !important; display: flex !important; align-items: center !important;
-      justify-content: center !important; font-size: 28px !important;
-      box-shadow: 0 0 40px rgba(16, 185, 129, 0.8) !important; display: none !important;
+      justify-content: center !important; font-size: 32px !important;
+      box-shadow: 0 0 50px rgba(16, 185, 129, 0.9) !important;
+    }
+    .guide-label {
+      position: fixed !important; background: #10B981 !important; color: white !important;
+      padding: 8px 14px !important; border-radius: 8px !important; font-size: 12px !important;
+      font-weight: 700 !important; z-index: 999998 !important; white-space: nowrap !important;
+      box-shadow: 0 4px 20px rgba(16, 185, 129, 0.4) !important;
     }
     .guide-panel {
       position: fixed !important; bottom: 20px !important; right: 20px !important;
-      width: 420px !important; max-height: 600px !important; overflow-y: auto !important;
-      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%) !important;
-      border: 2px solid #10B981 !important; border-radius: 16px !important; padding: 24px !important;
-      z-index: 999998 !important; box-shadow: 0 25px 80px rgba(0,0,0,0.6) !important;
+      width: 380px !important; background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%) !important;
+      border: 2px solid #10B981 !important; border-radius: 16px !important; padding: 20px !important;
+      z-index: 999997 !important; box-shadow: 0 25px 80px rgba(0,0,0,0.6) !important;
       font-family: -apple-system, sans-serif !important; color: #fff !important;
     }
-    .guide-header {
-      display: flex !important; align-items: center !important; gap: 12px !important;
-      margin-bottom: 20px !important; font-size: 18px !important; font-weight: 700 !important;
-      color: #10B981 !important;
-    }
     .guide-input {
-      width: 100% !important; padding: 14px !important; background: #1e293b !important;
+      width: 100% !important; padding: 12px !important; background: #1e293b !important;
       border: 2px solid #334155 !important; border-radius: 10px !important; color: #fff !important;
       font-size: 14px !important; margin-bottom: 12px !important; box-sizing: border-box !important;
     }
-    .guide-input:focus {
-      border-color: #10B981 !important; outline: none !important;
-    }
     .guide-btn {
-      width: 100% !important; padding: 14px !important; background: linear-gradient(135deg, #10B981 0%, #059669 100%) !important;
+      width: 100% !important; padding: 12px !important; background: #10B981 !important;
       border: none !important; border-radius: 10px !important; color: white !important;
       font-weight: 700 !important; cursor: pointer !important; font-size: 14px !important;
-      transition: all 0.2s !important;
     }
-    .guide-btn:hover { transform: scale(1.02) !important; box-shadow: 0 8px 20px rgba(16, 185, 129, 0.4) !important; }
-    .guide-message {
-      margin: 12px 0 !important; padding: 14px !important; background: #1e293b !important;
-      border-radius: 10px !important; font-size: 13px !important; line-height: 1.6 !important;
-      border-left: 4px solid #10B981 !important; animation: slideIn 0.3s ease !important;
-    }
-    .guide-message strong { color: #10B981 !important; }
+    .guide-btn:hover { background: #059669 !important; }
     .guide-status {
       margin-top: 12px !important; padding: 10px !important; background: rgba(16, 185, 129, 0.1) !important;
-      border-radius: 8px !important; font-size: 11px !important; color: #6ee7b7 !important;
-      text-align: center !important;
-    }
-    @keyframes slideIn {
-      from { opacity: 0; transform: translateY(10px); }
-      to { opacity: 1; transform: translateY(0); }
+      border-radius: 8px !important; font-size: 12px !important; color: #6ee7b7 !important;
+      text-align: center !important; line-height: 1.5 !important;
     }
   `;
   document.head.appendChild(style);
@@ -69,148 +55,118 @@
   cursor.innerHTML = '👆';
   document.body.appendChild(cursor);
 
+  const label = document.createElement('div');
+  label.className = 'guide-label';
+  document.body.appendChild(label);
+
   const panel = document.createElement('div');
   panel.className = 'guide-panel';
   panel.innerHTML = `
-    <div class="guide-header">
-      <span>🤖</span>
-      <span>AI Guide</span>
-    </div>
-    <input class="guide-input" id="guideGoal" placeholder="What do you want to accomplish? (e.g., Create a Purchase Order)">
-    <button class="guide-btn" onclick="window.startAIGuide()">Start AI Guidance</button>
-    <div id="guideMessages"></div>
+    <h3 style="margin:0 0 15px 0; color:#10B981; font-size:16px;">🤖 AI Guide</h3>
+    <input class="guide-input" id="guideGoal" placeholder="What do you want to do?">
+    <button class="guide-btn" onclick="window.startGuide()">Let's Go</button>
     <div class="guide-status" id="guideStatus">Ready to guide you!</div>
   `;
   document.body.appendChild(panel);
 
-  function capturePageContext() {
-    return {
-      url: window.location.href,
-      title: document.title,
-      visibleButtons: Array.from(document.querySelectorAll('button, a')).filter(el => el.offsetHeight > 0).slice(0, 30).map(el => el.textContent.trim().slice(0, 50)),
-      visibleInputs: Array.from(document.querySelectorAll('input, select')).filter(el => el.offsetHeight > 0).slice(0, 20).map(el => ({
-        type: el.type || 'select',
-        name: el.getAttribute('data-fieldname') || el.name || el.placeholder
-      }))
-    };
-  }
-
-  function addMessage(text, isAI = true) {
-    const messages = document.getElementById('guideMessages');
-    const msg = document.createElement('div');
-    msg.className = 'guide-message';
-    msg.innerHTML = isAI ? `<strong>🤖 AI:</strong> ${text}` : `<strong>👤 You:</strong> ${text}`;
-    messages.appendChild(msg);
-    messages.scrollTop = messages.scrollHeight;
-  }
-
-  function findAndHighlight(elementDescription) {
-    const allElements = document.querySelectorAll('button, a, input, select, [role="button"]');
-    
-    for (let el of allElements) {
-      const text = el.textContent.toLowerCase();
-      const desc = elementDescription.toLowerCase();
-      
-      if (text.includes(desc) && el.offsetHeight > 0) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        
-        setTimeout(() => {
-          const rect = el.getBoundingClientRect();
-          cursor.style.left = (rect.left + rect.width / 2 - 25) + 'px';
-          cursor.style.top = (rect.top + rect.height / 2 - 25) + 'px';
-          cursor.style.display = 'flex';
-          
-          el.style.outline = '4px solid #10B981';
-          el.style.outlineOffset = '4px';
-          el.style.transition = 'all 0.3s';
-          
-          setTimeout(() => {
-            el.style.outline = '';
-          }, 5000);
-        }, 500);
-        
-        return true;
+  function findAllElements() {
+    const buttons = [];
+    document.querySelectorAll('button, a, input, select, [role="button"]').forEach(el => {
+      if (el.offsetHeight > 0) {
+        buttons.push({
+          el,
+          text: el.textContent.toLowerCase().trim(),
+          placeholder: (el.getAttribute('placeholder') || '').toLowerCase(),
+          type: el.tagName.toLowerCase()
+        });
       }
-    }
-    return false;
+    });
+    return buttons;
   }
 
-  async function getAIGuidance(goal, currentContext, step) {
+  async function guideTowards(goal) {
     const status = document.getElementById('guideStatus');
-    status.textContent = '🧠 AI is analyzing the page...';
+    status.textContent = '🔍 Analyzing page...';
+
+    const elements = findAllElements();
+    const elementList = elements.slice(0, 20).map(e => `${e.text || e.placeholder} (${e.type})`).join(', ');
 
     try {
-      const response = await fetch(`${API_URL}/ai-guide`, {
+      const response = await fetch(`${API_URL}/next-step`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           goal,
-          context: currentContext,
-          step,
-          history: conversationHistory
+          visibleElements: elementList,
+          currentUrl: window.location.href
         })
       });
 
       const data = await response.json();
-      status.textContent = '✅ AI ready';
-      return data;
+      const targetText = data.nextClick.toLowerCase();
+
+      // Find matching element
+      let target = null;
+      for (let elem of elements) {
+        if (elem.text.includes(targetText) || elem.placeholder.includes(targetText)) {
+          target = elem.el;
+          break;
+        }
+      }
+
+      if (!target) {
+        status.textContent = `❌ Can't find "${targetText}" - ${data.reason}`;
+        return;
+      }
+
+      // Scroll into view
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+      setTimeout(() => {
+        const rect = target.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+
+        // Animate cursor
+        cursor.style.left = (cx - 30) + 'px';
+        cursor.style.top = (cy - 30) + 'px';
+        cursor.style.display = 'flex';
+
+        // Show label
+        label.textContent = data.instruction;
+        label.style.left = (cx + 50) + 'px';
+        label.style.top = (cy - 20) + 'px';
+        label.style.display = 'block';
+
+        status.textContent = '✅ ' + data.instruction;
+
+        // Wait for click
+        const clickListener = (e) => {
+          if (e.target === target || target.contains(e.target)) {
+            document.removeEventListener('click', clickListener, true);
+            target.click();
+            cursor.style.display = 'none';
+            label.style.display = 'none';
+            status.textContent = '✅ Clicked! What next?';
+            isGuiding = false;
+          }
+        };
+
+        document.addEventListener('click', clickListener, true);
+
+      }, 500);
+
     } catch (err) {
-      status.textContent = '❌ AI error';
-      return {
-        instruction: "I see you want to: " + goal + ". Let me find the right button...",
-        nextElement: extractKeyword(goal)
-      };
+      status.textContent = '❌ Error: ' + err.message;
     }
   }
 
-  function extractKeyword(text) {
-    const keywords = ['purchase order', 'sales order', 'invoice', 'buying', 'selling', 'stock', 'new', 'save', 'submit'];
-    const lower = text.toLowerCase();
-    for (let keyword of keywords) {
-      if (lower.includes(keyword)) return keyword;
-    }
-    return text.split(' ')[0];
-  }
-
-  window.startAIGuide = async function() {
+  window.startGuide = function() {
     currentGoal = document.getElementById('guideGoal').value;
-    if (!currentGoal) return;
-
-    conversationHistory = [];
-    document.getElementById('guideMessages').innerHTML = '';
-    
-    addMessage(currentGoal, false);
-    addMessage('I can help with that! Let me analyze what\'s on your screen...');
-
-    await guideNextStep(0);
+    if (!currentGoal) return alert('Tell me what you want to do!');
+    isGuiding = true;
+    guideTowards(currentGoal);
   };
 
-  async function guideNextStep(stepNumber) {
-    const context = capturePageContext();
-    const guidance = await getAIGuidance(currentGoal, context, stepNumber);
-
-    addMessage(guidance.instruction || 'Click the highlighted element');
-
-    const found = findAndHighlight(guidance.nextElement || extractKeyword(currentGoal));
-
-    if (found) {
-      setTimeout(() => {
-        addMessage('Did you click it? I\'ll check in 3 seconds and guide you to the next step...');
-        
-        setTimeout(async () => {
-          const newContext = capturePageContext();
-          if (JSON.stringify(newContext) !== JSON.stringify(context)) {
-            addMessage('Great! I see the page changed. Moving to next step...');
-            await guideNextStep(stepNumber + 1);
-          } else {
-            addMessage('Still waiting for you to click. Take your time!');
-          }
-        }, 3000);
-      }, 1000);
-    } else {
-      addMessage(`I can't find that element on this page. Try navigating to the right module first.`);
-    }
-  }
-
-  console.log('✅ AI Vision Guide Ready!');
+  console.log('✅ AI Visual Guide Ready!');
 })();
