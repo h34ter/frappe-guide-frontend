@@ -1,30 +1,17 @@
-// embed.js - THE VERSION THAT WORKED
+// embed.js - OUTLINE VERSION (NO CURSOR, JUST HIGHLIGHT)
 (function() {
   'use strict';
   if (window.FRAPPE_GUIDE_LOADED) return;
   window.FRAPPE_GUIDE_LOADED = true;
 
   const API_URL = 'https://frappe-guide-backend.onrender.com';
+  let userProfile = null;
+  let currentGoal = '';
+  let isGuiding = false;
+  let stepCount = 0;
 
   const style = document.createElement('style');
   style.textContent = `
-    .guide-cursor {
-      position: fixed;
-      width: 40px;
-      height: 40px;
-      border: 3px solid #3B82F6;
-      border-radius: 50%;
-      background: rgba(59, 130, 246, 0.15);
-      pointer-events: none;
-      z-index: 99999;
-      box-shadow: 0 0 20px rgba(59, 130, 246, 0.6);
-      font-size: 18px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: #3B82F6;
-      font-weight: bold;
-    }
     .guide-panel {
       position: fixed; bottom: 30px; right: 30px; width: 420px;
       background: linear-gradient(135deg, #0f172a, #1e293b);
@@ -55,15 +42,10 @@
       border-left: 4px solid #3B82F6; border-radius: 6px; font-size: 13px;
       line-height: 1.7; color: #E5E7EB;
     }
+    .guide-step strong { color: #60A5FA; }
     .guide-hidden { display: none; }
   `;
   document.head.appendChild(style);
-
-  const cursor = document.createElement('div');
-  cursor.className = 'guide-cursor';
-  cursor.innerHTML = '●';
-  cursor.style.display = 'none';
-  document.body.appendChild(cursor);
 
   const panel = document.createElement('div');
   panel.className = 'guide-panel';
@@ -95,7 +77,7 @@
       <button class="guide-btn" onclick="window.startOnboarding()">Start</button>
     </div>
     <div id="suggestionsSection" class="guide-hidden">
-      <p id="suggestionText" style="font-size:13px;"></p>
+      <p id="suggestionText" style="font-size:13px; margin-bottom:15px;"></p>
       <div id="suggestionsList"></div>
     </div>
     <div id="guidanceSection" class="guide-hidden">
@@ -104,31 +86,99 @@
   `;
   document.body.appendChild(panel);
 
+  document.addEventListener('click', async (e) => {
+    if (!isGuiding || e.target.closest('.guide-panel')) return;
+    const clickedText = e.target.textContent?.slice(0, 50) || '';
+    if (clickedText.trim()) await continueGuidance(clickedText);
+  }, true);
+
   window.startOnboarding = async function() {
     const name = document.getElementById('userName').value;
     const role = document.getElementById('userRole').value;
     const industry = document.getElementById('userIndustry').value;
     if (!name || !role || !industry) return alert('Fill all!');
 
-    document.getElementById('onboardingSection').classList.add('guide-hidden');
-    document.getElementById('suggestionsSection').classList.remove('guide-hidden');
-    document.getElementById('suggestionText').textContent = 'Pick a task:';
-    document.getElementById('suggestionsList').innerHTML = `
-      <button class="guide-suggestion-btn" onclick="window.selectTask('Create Purchase Order')">Create Purchase Order</button>
-    `;
+    userProfile = { name, role, industry };
+
+    try {
+      const response = await fetch(`${API_URL}/onboarding-suggestions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role, industry })
+      });
+      const data = await response.json();
+      
+      document.getElementById('onboardingSection').classList.add('guide-hidden');
+      document.getElementById('suggestionsSection').classList.remove('guide-hidden');
+      document.getElementById('suggestionText').textContent = data.greeting;
+      document.getElementById('suggestionsList').innerHTML = data.suggestions
+        .map(s => `<button class="guide-suggestion-btn" onclick="window.selectTask('${s}')">${s}</button>`)
+        .join('');
+    } catch (err) {
+      alert('Error loading');
+    }
   };
 
-  window.selectTask = function(task) {
+  window.selectTask = async function(task) {
+    currentGoal = task;
+    isGuiding = true;
+    stepCount = 0;
+
     document.getElementById('suggestionsSection').classList.add('guide-hidden');
     document.getElementById('guidanceSection').classList.remove('guide-hidden');
-    
-    // SHOW CURSOR
-    cursor.style.display = 'flex';
-    cursor.style.left = '300px';
-    cursor.style.top = '300px';
-    
-    document.getElementById('guideStep').innerHTML = `<div class="guide-step">Follow the cursor!</div>`;
+    document.getElementById('guideStep').innerHTML = `<div class="guide-step"><strong>🎯 ${task}</strong><br><br>Watch for highlighted elements!</div>`;
+
+    await continueGuidance('start');
   };
 
-  console.log('✅ Working cursor loaded!');
+  async function continueGuidance(whatUserClicked) {
+    const stepDiv = document.getElementById('guideStep');
+    stepDiv.innerHTML = `<div class="guide-step"><strong>⏳</strong> Thinking...</div>`;
+
+    try {
+      const allElements = [];
+      document.querySelectorAll('button, a, input, select, [role="button"]').forEach(el => {
+        if (el.offsetHeight > 0) {
+          allElements.push({ text: el.textContent?.slice(0, 40) || el.getAttribute('placeholder') || '' });
+        }
+      });
+
+      const response = await fetch(`${API_URL}/personalized-guidance`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userProfile,
+          goal: currentGoal,
+          userJustClicked: whatUserClicked,
+          pageUrl: window.location.href,
+          availableElements: allElements.slice(0, 40),
+          stepNumber: stepCount++
+        })
+      });
+
+      const data = await response.json();
+      stepDiv.innerHTML = `<div class="guide-step"><strong>${data.roleEmoji} ${data.personalizedInstruction}</strong></div>`;
+
+      // HIGHLIGHT ELEMENT WITH OUTLINE (NO CURSOR)
+      const search = data.nextElement.toLowerCase();
+      const allEls = document.querySelectorAll('button, a, input, select, [role="button"]');
+      for (let el of allEls) {
+        const text = (el.textContent || el.getAttribute('placeholder') || '').toLowerCase();
+        if (text.includes(search) && el.offsetHeight > 0) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          setTimeout(() => {
+            el.style.outline = '4px solid #3B82F6';
+            el.style.outlineOffset = '4px';
+            el.style.transition = 'outline 0.3s ease';
+            setTimeout(() => { el.style.outline = ''; }, 5000);
+          }, 300);
+          break;
+        }
+      }
+    } catch (err) {
+      stepDiv.innerHTML = `<div class="guide-step"><strong>⚠️</strong> ${err.message}</div>`;
+    }
+  }
+
+  console.log('✅ Outline guide ready!');
 })();
