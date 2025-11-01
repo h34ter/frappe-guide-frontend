@@ -1,8 +1,12 @@
-// embed.js - WITH AI CURSOR GUIDANCE
+// embed.js - COMPLETE VERSION WITH CLICK DETECTION & TAB
 const API_URL = 'https://frappe-guide-backend.onrender.com';
 let currentRole = null;
 let currentPhase = 1;
 let isInstrucing = false;
+let currentStepIndex = 0;
+let workflowSteps = [];
+let waitingForClick = false;
+let targetElement = null;
 
 const cursor = document.createElement('div');
 cursor.className = 'guide-cursor';
@@ -12,10 +16,11 @@ const tooltip = document.createElement('div');
 tooltip.className = 'guide-tooltip';
 document.body.appendChild(tooltip);
 
+// Create collapsible sidebar
 const sidebar = document.createElement('div');
 sidebar.className = 'guide-sidebar';
 sidebar.innerHTML = `
-  <h2>Frappe Guide</h2>
+  <h2>🤖 Frappe Guide</h2>
   
   <div class="guide-section">
     <label>Your Role</label>
@@ -44,15 +49,23 @@ sidebar.innerHTML = `
 `;
 document.body.appendChild(sidebar);
 
-// Frappe element mapping (button locations)
-const FRAPPE_MAP = {
-  'buying': { selector: '[data-label="Buying"]', desc: 'Buying Module' },
-  'selling': { selector: '[data-label="Selling"]', desc: 'Selling Module' },
-  'stock': { selector: '[data-label="Stock"]', desc: 'Stock Module' },
-  'new-button': { selector: 'button[data-label="New"]', desc: 'New Button' },
-  'save-button': { selector: 'button[title="Save"]', desc: 'Save Button' },
-  'submit-button': { selector: 'button[data-label="Submit"]', desc: 'Submit Button' }
+// Create tab that's always visible
+const tab = document.createElement('div');
+tab.className = 'guide-tab';
+tab.innerHTML = '🤖';
+tab.onclick = () => {
+  sidebar.classList.toggle('open');
+  tab.classList.toggle('active');
 };
+document.body.appendChild(tab);
+
+// Close sidebar when clicking outside
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.guide-sidebar') && !e.target.closest('.guide-tab') && sidebar.classList.contains('open')) {
+    sidebar.classList.remove('open');
+    tab.classList.remove('active');
+  }
+});
 
 window.loadPhases = function(role) {
   const phases = {
@@ -75,24 +88,23 @@ window.startPhase = function() {
       Phase ${currentPhase} Active
     </div>
     <div class="current-step">
-      Enter what you want to learn and I'll guide you!
+      Enter what you want to learn and I'll guide you step-by-step!
     </div>
   `;
 };
 
-// MAIN FUNCTION: AI guides the cursor
 window.startGuidance = function() {
   const task = document.getElementById('taskInput').value;
   if (!task) return;
 
   isInstrucing = true;
+  currentStepIndex = 0;
   document.getElementById('currentGuidance').innerHTML = `
     <div class="current-step" style="background: #f59e0b14; border-left-color: #f59e0b;">
       ⏳ AI is planning your lesson...
     </div>
   `;
 
-  // Ask AI for guidance
   fetch(`${API_URL}/analyze-element`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -105,15 +117,8 @@ window.startGuidance = function() {
   })
   .then(r => r.json())
   .then(data => {
-    document.getElementById('currentGuidance').innerHTML = `
-      <div class="current-step">
-        <strong>Next Step:</strong>
-        <p>${data.guidance}</p>
-      </div>
-    `;
-
-    // Now find and animate cursor to relevant element
-    animateCursorToElement(task);
+    // First step
+    executeStep(data.guidance, task);
   })
   .catch(err => {
     console.error('Error:', err);
@@ -125,49 +130,67 @@ window.startGuidance = function() {
   });
 };
 
-// CURSOR ANIMATION: Move cursor smoothly to target
-function animateCursorToElement(task) {
-  // Find the most relevant element on the page
-  const allElements = document.querySelectorAll('button, a, input, select, [role="button"]');
+function executeStep(instruction, task) {
+  document.getElementById('currentGuidance').innerHTML = `
+    <div class="current-step">
+      <strong>Step ${currentStepIndex + 1}:</strong>
+      <p>${instruction}</p>
+      <div style="margin-top: 8px; color: #9CA3AF; font-size: 12px;">
+        ⏳ Waiting for you to click...
+      </div>
+    </div>
+  `;
+
+  // Find and animate cursor to target
+  targetElement = findRelevantElement(task);
   
-  let targetElement = null;
-  let maxMatch = 0;
-
-  // Find best matching element based on text
-  for (let el of allElements) {
-    const text = el.textContent.toLowerCase();
-    const taskLower = task.toLowerCase();
-    
-    if (text.includes(taskLower.split(' ')[0])) {
-      targetElement = el;
-      break;
-    }
-  }
-
-  // If no perfect match, find first visible button
-  if (!targetElement) {
-    targetElement = document.querySelector('button:not([style*="display: none"])');
-  }
-
   if (targetElement) {
     const rect = targetElement.getBoundingClientRect();
     const targetX = rect.left + rect.width / 2;
     const targetY = rect.top + rect.height / 2;
 
-    // Animate cursor from center to target
     animateCursor(window.innerWidth / 2, window.innerHeight / 2, targetX, targetY, 1500);
 
-    // Show tooltip on target
     setTimeout(() => {
-      tooltip.textContent = `Click here: ${targetElement.textContent || 'button'}`;
-      tooltip.style.left = (targetX + 20) + 'px';
-      tooltip.style.top = (targetY - 50) + 'px';
+      // Smart tooltip positioning (avoid going off screen)
+      let tooltipX = targetX + 20;
+      let tooltipY = targetY - 50;
+      
+      // Keep tooltip on screen
+      if (tooltipY < 10) tooltipY = targetY + rect.height + 10;
+      if (tooltipX > window.innerWidth - 300) tooltipX = targetX - 300;
+      
+      tooltip.textContent = `Click here: ${targetElement.textContent.slice(0, 30) || 'button'}`;
+      tooltip.style.left = tooltipX + 'px';
+      tooltip.style.top = tooltipY + 'px';
       tooltip.style.display = 'block';
+      
+      waitingForClick = true;
     }, 1500);
   }
 }
 
-// Smooth cursor animation
+function findRelevantElement(task) {
+  const allElements = document.querySelectorAll('button, a, input, select, [role="button"]');
+  
+  let target = null;
+  const taskLower = task.toLowerCase();
+
+  for (let el of allElements) {
+    const text = el.textContent.toLowerCase();
+    if (text.includes(taskLower.split(' ')[0]) || text.includes(taskLower.split(' ')[1])) {
+      target = el;
+      break;
+    }
+  }
+
+  if (!target) {
+    target = document.querySelector('button:not([style*="display: none"])');
+  }
+
+  return target;
+}
+
 function animateCursor(startX, startY, endX, endY, duration = 1500) {
   const startTime = Date.now();
   
@@ -175,7 +198,6 @@ function animateCursor(startX, startY, endX, endY, duration = 1500) {
     const elapsed = Date.now() - startTime;
     const progress = Math.min(elapsed / duration, 1);
 
-    // Easing function (ease-in-out)
     const easeProgress = progress < 0.5 
       ? 2 * progress * progress 
       : -1 + (4 - 2 * progress) * progress;
@@ -186,14 +208,11 @@ function animateCursor(startX, startY, endX, endY, duration = 1500) {
     cursor.style.left = (currentX - 20) + 'px';
     cursor.style.top = (currentY - 20) + 'px';
     cursor.style.display = 'block';
-
-    // Glow effect increases as cursor moves
     cursor.style.boxShadow = `0 0 ${20 + progress * 10}px rgba(59, 130, 246, ${0.5 + progress * 0.3})`;
 
     if (progress < 1) {
       requestAnimationFrame(step);
     } else {
-      // Cursor reached target - pulse effect
       cursor.style.animation = 'pulse 0.6s ease-in-out 2';
     }
   }
@@ -201,7 +220,49 @@ function animateCursor(startX, startY, endX, endY, duration = 1500) {
   requestAnimationFrame(step);
 }
 
-// Add pulse animation
+// DETECT USER CLICKS - Move to next step
+document.addEventListener('click', (e) => {
+  if (!waitingForClick || !targetElement) return;
+
+  // Check if user clicked the target (or nearby)
+  const clickedElement = e.target;
+  const isCorrectClick = clickedElement === targetElement || targetElement.contains(clickedElement);
+
+  if (isCorrectClick) {
+    waitingForClick = false;
+    currentStepIndex++;
+    
+    // Celebrate!
+    document.getElementById('currentGuidance').innerHTML = `
+      <div class="current-step" style="background: #10b98114; border-left-color: #10b981;">
+        ✅ Great! Step ${currentStepIndex} complete.
+        <div style="margin-top: 8px;">
+          ⏳ Moving to next step...
+        </div>
+      </div>
+    `;
+
+    // Get next step from AI
+    setTimeout(() => {
+      fetch(`${API_URL}/analyze-element`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          elementText: `Next step after clicking ${targetElement.textContent}`,
+          elementType: 'NEXT_STEP',
+          userRole: currentRole,
+          currentPhase
+        })
+      })
+      .then(r => r.json())
+      .then(data => {
+        executeStep(data.guidance, targetElement.textContent);
+      })
+      .catch(err => console.error('Error:', err));
+    }, 1000);
+  }
+}, true); // Use capture phase to catch all clicks
+
 const style = document.createElement('style');
 style.innerHTML = `
   @keyframes pulse {
@@ -216,13 +277,13 @@ document.getElementById('userRole').addEventListener('change', (e) => {
   if (currentRole) window.loadPhases(currentRole);
 });
 
-// Hover detection still works
+// Hover detection (only when not in active guidance mode)
 document.addEventListener('mousemove', (e) => {
-  if (isInstrucing) return; // Don't interfere during AI guidance
+  if (isInstrucing) return;
 
   const element = document.elementFromPoint(e.clientX, e.clientY);
   
-  if (element && !element.closest('.guide-sidebar') && currentRole) {
+  if (element && !element.closest('.guide-sidebar') && !element.closest('.guide-tab') && currentRole) {
     cursor.style.left = (e.clientX - 20) + 'px';
     cursor.style.top = (e.clientY - 20) + 'px';
     cursor.style.display = 'block';
@@ -242,9 +303,16 @@ document.addEventListener('mousemove', (e) => {
       })
       .then(r => r.json())
       .then(data => {
+        // Smart tooltip positioning
+        let tooltipX = e.clientX + 20;
+        let tooltipY = e.clientY - 50;
+        
+        if (tooltipY < 10) tooltipY = e.clientY + 20;
+        if (tooltipX > window.innerWidth - 300) tooltipX = e.clientX - 300;
+        
         tooltip.textContent = data.guidance;
-        tooltip.style.left = (e.clientX + 20) + 'px';
-        tooltip.style.top = (e.clientY - 50) + 'px';
+        tooltip.style.left = tooltipX + 'px';
+        tooltip.style.top = tooltipY + 'px';
         tooltip.style.display = 'block';
       })
       .catch(err => console.error('Error:', err));
@@ -255,4 +323,4 @@ document.addEventListener('mousemove', (e) => {
   }
 });
 
-console.log('✓ Frappe Guide loaded with AI cursor guidance!');
+console.log('✓ Frappe Guide loaded - AI will detect your clicks!');
