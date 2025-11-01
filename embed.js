@@ -3,7 +3,7 @@
   window.GUIDE_LOADED = true;
 
   const API = 'https://frappe-guide-backend.onrender.com';
-  let tutorial = [], step = 0, panel, cursor, lastURL = '', lastPageState = '', scanInterval, currentTarget = '';
+  let tutorial = [], step = 0, panel, cursor;
 
   // STYLES
   const s = document.createElement('style');
@@ -30,7 +30,7 @@
     document.getElementById('s1').classList.add('gh');
     document.getElementById('s2').classList.remove('gh');
 
-    // GET PERSONALIZED TUTORIAL
+    // GET TUTORIAL
     const r = await fetch(`${API}/analyze-job`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -40,54 +40,42 @@
     const data = await r.json();
     tutorial = data.tutorial || [];
     step = 0;
-    lastURL = window.location.href;
-    lastPageState = getPageState();
 
-    document.getElementById('info').innerHTML = `<div class="gs"><strong>📚 Your Learning Path</strong><br>Modules: ${data.modules.join(', ')}<br>Features: ${data.features.join(', ')}<br><br><strong>First lesson:</strong> ${data.firstStep}<br>${data.why}</div>`;
+    console.log('Tutorial loaded:', tutorial);
 
-    // SHOW FIRST STEP
-    await showStep();
+    showStep();
 
-    // START AUTO-SCAN
-    scanInterval = setInterval(scanForChanges, 1500);
+    // LISTEN FOR EVERY CLICK ANYWHERE
+    document.addEventListener('click', () => {
+      setTimeout(showStep, 500);
+    }, true);
   };
-
-  function getPageState() {
-    const elements = Array.from(document.querySelectorAll('button, a, input, select')).map(e => (e.textContent || '').slice(0, 20)).join('|');
-    return window.location.href + '|' + elements;
-  }
-
-  async function scanForChanges() {
-    const currentState = getPageState();
-    if (currentState !== lastPageState) {
-      lastPageState = currentState;
-      await showStep();
-    }
-  }
 
   async function showStep() {
     if (step >= tutorial.length) {
-      document.getElementById('info').innerHTML = '<div class="gs"><strong>✅ Complete!</strong> You learned this Frappe feature!</div>';
+      document.getElementById('info').innerHTML = '<div class="gs"><strong>✅ Complete!</strong></div>';
       cursor.style.display = 'none';
-      clearInterval(scanInterval);
       return;
     }
 
     const elements = Array.from(document.querySelectorAll('button, a, input, select, [role="button"]')).map(e => (e.textContent || e.getAttribute('placeholder') || '').slice(0, 40)).filter(e => e);
 
-    const r = await fetch(`${API}/next-step`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ currentStep: step, totalSteps: tutorial.length, tutorial, pageElements: elements.slice(0, 20) })
-    });
+    try {
+      const r = await fetch(`${API}/next-step`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentStep: step, totalSteps: tutorial.length, tutorial, pageElements: elements.slice(0, 20) })
+      });
 
-    const data = await r.json();
-    currentTarget = data.nextElement;
+      const data = await r.json();
+      
+      document.getElementById('info').innerHTML = `<div class="gs"><strong>Step ${data.step}/${tutorial.length}</strong><br>${data.instruction}</div>`;
 
-    document.getElementById('info').innerHTML = `<div class="gs"><strong>Step ${data.step}/${tutorial.length}</strong><br>${data.instruction}</div>`;
-
-    highlightElement(data.nextElement);
-    step++;
+      highlightElement(data.nextElement);
+      step++;
+    } catch (err) {
+      console.error('Error:', err);
+    }
   }
 
   function highlightElement(text) {
@@ -103,10 +91,8 @@
     for (let el of els) {
       const t = (el.textContent || el.getAttribute('placeholder') || '').toLowerCase();
       if (t.includes(search) && el.offsetHeight > 0) {
-        // SCROLL INTO VIEW
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
-        // SHOW CURSOR
         setTimeout(() => {
           const rect = el.getBoundingClientRect();
           cursor.style.left = (rect.left + rect.width / 2 - 30) + 'px';
@@ -114,7 +100,6 @@
           cursor.style.display = 'flex';
         }, 300);
 
-        // ADD BLUE OUTLINE
         setTimeout(() => {
           el.style.outline = '4px solid #3B82F6';
           el.style.outlineOffset = '4px';
