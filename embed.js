@@ -3,12 +3,18 @@
   window.GUIDE_LOADED = true;
 
   const API = 'https://frappe-guide-backend.onrender.com';
-  let tutorial = [], step = 0, panel, lastURL = '', scanInterval;
+  let tutorial = [], step = 0, panel, cursor, lastURL = '', lastPageState = '', scanInterval, currentTarget = '';
 
   // STYLES
   const s = document.createElement('style');
-  s.textContent = `.gp{position:fixed;bottom:30px;right:30px;width:380px;background:#0f172a;border:2px solid #3B82F6;border-radius:10px;padding:20px;z-index:999998;color:#f3f4f6;font-family:Arial;font-size:13px}.gp input,.gp select{width:100%;padding:8px;margin:8px 0;border:1px solid #334155;background:#1e293b;color:#f3f4f6;border-radius:6px;font-size:12px}.gp button{width:100%;padding:10px;background:#3B82F6;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:bold;margin:8px 0}.gh{display:none}.gs{padding:10px;background:rgba(59,130,246,0.1);border-left:3px solid #3B82F6;margin:10px 0;border-radius:4px}`;
+  s.textContent = `.gc{position:fixed;width:60px;height:60px;border:4px solid #3B82F6;border-radius:50%;background:rgba(59,130,246,0.2);box-shadow:0 0 40px rgba(59,130,246,0.9);z-index:999999;display:none;align-items:center;justify-content:center;font-size:28px;pointer-events:none}.gp{position:fixed;bottom:30px;right:30px;width:380px;background:#0f172a;border:2px solid #3B82F6;border-radius:10px;padding:20px;z-index:999998;color:#f3f4f6;font-family:Arial;font-size:13px}.gp input,.gp select{width:100%;padding:8px;margin:8px 0;border:1px solid #334155;background:#1e293b;color:#f3f4f6;border-radius:6px;font-size:12px}.gp button{width:100%;padding:10px;background:#3B82F6;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:bold;margin:8px 0}.gh{display:none}.gs{padding:10px;background:rgba(59,130,246,0.1);border-left:3px solid #3B82F6;margin:10px 0;border-radius:4px}`;
   document.head.appendChild(s);
+
+  // CREATE CURSOR
+  cursor = document.createElement('div');
+  cursor.className = 'gc';
+  cursor.innerHTML = '●';
+  document.body.appendChild(cursor);
 
   // CREATE PANEL
   panel = document.createElement('div');
@@ -35,34 +41,34 @@
     tutorial = data.tutorial || [];
     step = 0;
     lastURL = window.location.href;
+    lastPageState = getPageState();
 
     document.getElementById('info').innerHTML = `<div class="gs"><strong>📚 Your Learning Path</strong><br>Modules: ${data.modules.join(', ')}<br>Features: ${data.features.join(', ')}<br><br><strong>First lesson:</strong> ${data.firstStep}<br>${data.why}</div>`;
 
+    // SHOW FIRST STEP
+    await showStep();
+
     // START AUTO-SCAN
-    scanForClicks();
-    scanInterval = setInterval(scanForClicks, 1500);
+    scanInterval = setInterval(scanForChanges, 1500);
   };
 
-  async function scanForClicks() {
-    if (step >= tutorial.length) {
-      document.getElementById('info').innerHTML = '<div class="gs"><strong>✅ Complete!</strong> You now understand this Frappe feature.</div>';
-      clearInterval(scanInterval);
-      return;
-    }
+  function getPageState() {
+    const elements = Array.from(document.querySelectorAll('button, a, input, select')).map(e => (e.textContent || '').slice(0, 20)).join('|');
+    return window.location.href + '|' + elements;
+  }
 
-    const currentURL = window.location.href;
-    const urlChanged = currentURL !== lastURL;
-
-    if (urlChanged) {
-      lastURL = currentURL;
-      // PAGE CHANGED - SHOW NEXT STEP
+  async function scanForChanges() {
+    const currentState = getPageState();
+    if (currentState !== lastPageState) {
+      lastPageState = currentState;
       await showStep();
     }
   }
 
   async function showStep() {
     if (step >= tutorial.length) {
-      document.getElementById('info').innerHTML = '<div class="gs"><strong>✅ Complete!</strong> You now understand this Frappe feature.</div>';
+      document.getElementById('info').innerHTML = '<div class="gs"><strong>✅ Complete!</strong> You learned this Frappe feature!</div>';
+      cursor.style.display = 'none';
       clearInterval(scanInterval);
       return;
     }
@@ -76,6 +82,8 @@
     });
 
     const data = await r.json();
+    currentTarget = data.nextElement;
+
     document.getElementById('info').innerHTML = `<div class="gs"><strong>Step ${data.step}/${tutorial.length}</strong><br>${data.instruction}</div>`;
 
     highlightElement(data.nextElement);
@@ -98,18 +106,25 @@
         // SCROLL INTO VIEW
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
-        // ADD BLUE OUTLINE WRAPPING
+        // SHOW CURSOR
+        setTimeout(() => {
+          const rect = el.getBoundingClientRect();
+          cursor.style.left = (rect.left + rect.width / 2 - 30) + 'px';
+          cursor.style.top = (rect.top + rect.height / 2 - 30) + 'px';
+          cursor.style.display = 'flex';
+        }, 300);
+
+        // ADD BLUE OUTLINE
         setTimeout(() => {
           el.style.outline = '4px solid #3B82F6';
           el.style.outlineOffset = '4px';
-          el.style.transition = 'outline 0.3s ease';
           el.setAttribute('data-guide-highlight', 'true');
-        }, 100);
+        }, 400);
 
         break;
       }
     }
   }
 
-  console.log('✅ Frappe Guide Ready - Auto-Scan Active!');
+  console.log('✅ Frappe Guide Ready!');
 })();
