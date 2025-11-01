@@ -1,4 +1,4 @@
-// embed.js - WORKING VERSION WITH AI CURSOR MOVEMENT
+// embed.js - COMPLETE WORKING VERSION WITH AI CURSOR MOVEMENT
 (function() {
   'use strict';
   if (window.FRAPPE_GUIDE_LOADED) return;
@@ -135,4 +135,89 @@
     document.getElementById('taskSection').classList.add('guide-hidden');
     document.getElementById('guidanceSection').classList.remove('guide-hidden');
 
-    await
+    await guideStep();
+  };
+
+  // GUIDE STEP
+  async function guideStep() {
+    const taskVal = document.getElementById('taskSelect').value;
+    const allElements = [];
+    
+    document.querySelectorAll('button, a, input, select, [role="button"]').forEach(el => {
+      if (el.offsetHeight > 0) {
+        allElements.push({
+          text: el.textContent?.slice(0, 40) || el.getAttribute('placeholder') || '',
+          tagName: el.tagName
+        });
+      }
+    });
+
+    try {
+      const response = await fetch(`${API_URL}/guide-step`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          task: taskVal,
+          step: stepCount++,
+          pageUrl: window.location.href,
+          availableElements: allElements.slice(0, 30)
+        })
+      });
+
+      const data = await response.json();
+      document.getElementById('guideStep').innerHTML = `<div class="guide-step"><strong>Step ${stepCount}:</strong> ${data.instruction}</div>`;
+
+      // MOVE CURSOR TO ELEMENT
+      const search = data.nextClick.toLowerCase();
+      const allEls = document.querySelectorAll('button, a, input, select, [role="button"]');
+      
+      for (let el of allEls) {
+        const text = (el.textContent || el.getAttribute('placeholder') || '').toLowerCase();
+        if (text.includes(search) && el.offsetHeight > 0) {
+          const rect = el.getBoundingClientRect();
+          const targetX = rect.left + rect.width / 2 - 25;
+          const targetY = rect.top + rect.height / 2 - 25;
+
+          // ANIMATE CURSOR
+          animateTo(targetX, targetY, 600);
+          
+          // HIGHLIGHT ELEMENT
+          el.style.outline = '3px solid #3B82F6';
+          el.style.outlineOffset = '4px';
+          setTimeout(() => { el.style.outline = ''; }, 10000);
+          
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          break;
+        }
+      }
+    } catch (err) {
+      document.getElementById('guideStep').innerHTML = `<div class="guide-step"><strong>Error:</strong> ${err.message}</div>`;
+    }
+  }
+
+  // ANIMATE CURSOR
+  function animateTo(targetX, targetY, duration = 600) {
+    const startX = parseFloat(cursor.style.left);
+    const startY = parseFloat(cursor.style.top);
+    const startTime = Date.now();
+
+    function animate() {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      const ease = progress < 0.5 ? 2 * progress * progress : -1 + (4 - 2 * progress) * progress;
+
+      cursor.style.left = (startX + (targetX - startX) * ease) + 'px';
+      cursor.style.top = (startY + (targetY - startY) * ease) + 'px';
+
+      if (progress < 1) requestAnimationFrame(animate);
+    }
+    animate();
+  }
+
+  // NEXT STEP
+  window.nextStep = async function() {
+    await guideStep();
+  };
+
+  console.log('✅ AI Guide Ready - Cursor Draggable!');
+})();
