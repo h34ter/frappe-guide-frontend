@@ -1,12 +1,37 @@
-// embed.js - COMPLETE VERSION WITH CLICK DETECTION & TAB
+// embed.js - WITH HARDCODED WORKFLOWS
 const API_URL = 'https://frappe-guide-backend.onrender.com';
 let currentRole = null;
 let currentPhase = 1;
 let isInstrucing = false;
 let currentStepIndex = 0;
-let workflowSteps = [];
+let currentWorkflow = null;
 let waitingForClick = false;
 let targetElement = null;
+
+// PREDEFINED WORKFLOWS - Exact steps, no AI guessing
+const WORKFLOWS = {
+  'purchase order': [
+    { instruction: 'Click on the "Buying" module in the sidebar', selector: '[data-label="Buying"], a[href*="buying"]' },
+    { instruction: 'Click on "Purchase Order" from the menu', selector: '[data-label="Purchase Order"], a[href*="purchase-order"]' },
+    { instruction: 'Click the "New" button to create a new purchase order', selector: 'button[data-label="New"], .btn-primary-dark' },
+    { instruction: 'Select a supplier from the dropdown', selector: '[data-fieldname="supplier"]' },
+    { instruction: 'Add items by clicking "Add Row" in the items table', selector: '.grid-add-row' },
+    { instruction: 'Save your purchase order by clicking Save', selector: '[data-label="Save"]' }
+  ],
+  'sales order': [
+    { instruction: 'Click on the "Selling" module in the sidebar', selector: '[data-label="Selling"], a[href*="selling"]' },
+    { instruction: 'Click on "Sales Order"', selector: '[data-label="Sales Order"], a[href*="sales-order"]' },
+    { instruction: 'Click "New" to create a sales order', selector: 'button[data-label="New"]' },
+    { instruction: 'Select a customer', selector: '[data-fieldname="customer"]' },
+    { instruction: 'Add products to sell', selector: '.grid-add-row' },
+    { instruction: 'Set delivery date', selector: '[data-fieldname="delivery_date"]' },
+    { instruction: 'Save the sales order', selector: '[data-label="Save"]' }
+  ],
+  'stock': [
+    { instruction: 'Click on "Stock" module', selector: '[data-label="Stock"], a[href*="stock"]' },
+    { instruction: 'View your inventory', selector: '[data-label="Stock Balance"]' }
+  ]
+};
 
 const cursor = document.createElement('div');
 cursor.className = 'guide-cursor';
@@ -16,7 +41,6 @@ const tooltip = document.createElement('div');
 tooltip.className = 'guide-tooltip';
 document.body.appendChild(tooltip);
 
-// Create collapsible sidebar
 const sidebar = document.createElement('div');
 sidebar.className = 'guide-sidebar';
 sidebar.innerHTML = `
@@ -41,15 +65,27 @@ sidebar.innerHTML = `
 
   <div class="guide-section" id="taskSection" style="display:none;">
     <label>What do you want to learn?</label>
-    <input type="text" id="taskInput" placeholder="e.g., Create a Purchase Order">
-    <button class="guide-btn" onclick="window.startGuidance()">Let's Go!</button>
+    <select id="taskSelect">
+      <option value="">Select a workflow...</option>
+      <option value="purchase order">Create Purchase Order</option>
+      <option value="sales order">Create Sales Order</option>
+      <option value="stock">Check Stock Levels</option>
+    </select>
+    <button class="guide-btn" onclick="window.startGuidance()">Start Guide</button>
   </div>
 
   <div id="currentGuidance"></div>
+  <div id="progressBar" style="display:none; margin-top:10px;">
+    <div style="background:#374151; height:6px; border-radius:3px; overflow:hidden;">
+      <div id="progressFill" style="background:#3B82F6; height:100%; width:0%; transition:width 0.3s;"></div>
+    </div>
+    <div style="font-size:11px; color:#9CA3AF; margin-top:4px;">
+      Step <span id="currentStep">0</span> of <span id="totalSteps">0</span>
+    </div>
+  </div>
 `;
 document.body.appendChild(sidebar);
 
-// Create tab that's always visible
 const tab = document.createElement('div');
 tab.className = 'guide-tab';
 tab.innerHTML = '🤖';
@@ -59,7 +95,6 @@ tab.onclick = () => {
 };
 document.body.appendChild(tab);
 
-// Close sidebar when clicking outside
 document.addEventListener('click', (e) => {
   if (!e.target.closest('.guide-sidebar') && !e.target.closest('.guide-tab') && sidebar.classList.contains('open')) {
     sidebar.classList.remove('open');
@@ -84,123 +119,107 @@ window.startPhase = function() {
   currentPhase = parseInt(document.getElementById('learningPhase').value);
   document.getElementById('taskSection').style.display = 'block';
   document.getElementById('currentGuidance').innerHTML = `
-    <div class="phase-indicator">
-      Phase ${currentPhase} Active
-    </div>
-    <div class="current-step">
-      Enter what you want to learn and I'll guide you step-by-step!
-    </div>
+    <div class="phase-indicator">Phase ${currentPhase} Active</div>
+    <div class="current-step">Select what you want to learn!</div>
   `;
 };
 
 window.startGuidance = function() {
-  const task = document.getElementById('taskInput').value;
-  if (!task) return;
+  const task = document.getElementById('taskSelect').value;
+  if (!task || !WORKFLOWS[task]) {
+    alert('Please select a workflow!');
+    return;
+  }
 
-  isInstrucing = true;
+  currentWorkflow = WORKFLOWS[task];
   currentStepIndex = 0;
-  document.getElementById('currentGuidance').innerHTML = `
-    <div class="current-step" style="background: #f59e0b14; border-left-color: #f59e0b;">
-      ⏳ AI is planning your lesson...
-    </div>
-  `;
+  isInstrucing = true;
 
-  fetch(`${API_URL}/analyze-element`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      elementText: task,
-      elementType: 'TASK',
-      userRole: currentRole,
-      currentPhase
-    })
-  })
-  .then(r => r.json())
-  .then(data => {
-    // First step
-    executeStep(data.guidance, task);
-  })
-  .catch(err => {
-    console.error('Error:', err);
-    document.getElementById('currentGuidance').innerHTML = `
-      <div class="current-step" style="background: #ef444414; border-left-color: #ef4444;">
-        ⚠️ Error: ${err.message}
-      </div>
-    `;
-  });
+  document.getElementById('progressBar').style.display = 'block';
+  document.getElementById('totalSteps').textContent = currentWorkflow.length;
+  
+  executeCurrentStep();
 };
 
-function executeStep(instruction, task) {
+function executeCurrentStep() {
+  if (currentStepIndex >= currentWorkflow.length) {
+    // Workflow complete!
+    document.getElementById('currentGuidance').innerHTML = `
+      <div class="current-step" style="background:#10b98114; border-left-color:#10b981;">
+        🎉 Congratulations! You completed the workflow!
+      </div>
+    `;
+    isInstrucing = false;
+    waitingForClick = false;
+    tooltip.style.display = 'none';
+    cursor.style.display = 'none';
+    return;
+  }
+
+  const step = currentWorkflow[currentStepIndex];
+  
   document.getElementById('currentGuidance').innerHTML = `
     <div class="current-step">
       <strong>Step ${currentStepIndex + 1}:</strong>
-      <p>${instruction}</p>
-      <div style="margin-top: 8px; color: #9CA3AF; font-size: 12px;">
-        ⏳ Waiting for you to click...
+      <p>${step.instruction}</p>
+      <div style="margin-top:8px; color:#9CA3AF; font-size:12px;">
+        ⏳ Waiting for your click...
       </div>
     </div>
   `;
 
-  // Find and animate cursor to target
-  targetElement = findRelevantElement(task);
+  // Update progress
+  document.getElementById('currentStep').textContent = currentStepIndex + 1;
+  const progress = ((currentStepIndex + 1) / currentWorkflow.length) * 100;
+  document.getElementById('progressFill').style.width = progress + '%';
+
+  // Find target element
+  targetElement = document.querySelector(step.selector);
   
   if (targetElement) {
     const rect = targetElement.getBoundingClientRect();
     const targetX = rect.left + rect.width / 2;
     const targetY = rect.top + rect.height / 2;
 
-    animateCursor(window.innerWidth / 2, window.innerHeight / 2, targetX, targetY, 1500);
+    animateCursor(cursor.offsetLeft || window.innerWidth / 2, cursor.offsetTop || window.innerHeight / 2, targetX, targetY, 1000);
 
     setTimeout(() => {
-      // Smart tooltip positioning (avoid going off screen)
       let tooltipX = targetX + 20;
       let tooltipY = targetY - 50;
       
-      // Keep tooltip on screen
-      if (tooltipY < 10) tooltipY = targetY + rect.height + 10;
+      if (tooltipY < 60) tooltipY = targetY + rect.height + 10;
       if (tooltipX > window.innerWidth - 300) tooltipX = targetX - 300;
       
-      tooltip.textContent = `Click here: ${targetElement.textContent.slice(0, 30) || 'button'}`;
+      tooltip.textContent = step.instruction;
       tooltip.style.left = tooltipX + 'px';
       tooltip.style.top = tooltipY + 'px';
       tooltip.style.display = 'block';
       
       waitingForClick = true;
-    }, 1500);
+    }, 1000);
+  } else {
+    // Element not found - skip or show warning
+    document.getElementById('currentGuidance').innerHTML += `
+      <div style="background:#f59e0b14; border-left:3px solid #f59e0b; padding:8px; margin-top:8px; font-size:12px;">
+        ⚠️ Can't find this element on current page. Try navigating manually or click "Skip"
+        <button class="guide-btn" onclick="window.skipStep()" style="margin-top:8px; font-size:12px;">Skip This Step</button>
+      </div>
+    `;
   }
 }
 
-function findRelevantElement(task) {
-  const allElements = document.querySelectorAll('button, a, input, select, [role="button"]');
-  
-  let target = null;
-  const taskLower = task.toLowerCase();
+window.skipStep = function() {
+  currentStepIndex++;
+  executeCurrentStep();
+};
 
-  for (let el of allElements) {
-    const text = el.textContent.toLowerCase();
-    if (text.includes(taskLower.split(' ')[0]) || text.includes(taskLower.split(' ')[1])) {
-      target = el;
-      break;
-    }
-  }
-
-  if (!target) {
-    target = document.querySelector('button:not([style*="display: none"])');
-  }
-
-  return target;
-}
-
-function animateCursor(startX, startY, endX, endY, duration = 1500) {
+function animateCursor(startX, startY, endX, endY, duration = 1000) {
   const startTime = Date.now();
   
   function step() {
     const elapsed = Date.now() - startTime;
     const progress = Math.min(elapsed / duration, 1);
-
-    const easeProgress = progress < 0.5 
-      ? 2 * progress * progress 
-      : -1 + (4 - 2 * progress) * progress;
+    const easeProgress = progress < 0.5 ? 2 * progress * progress : -1 + (4 - 2 * progress) * progress;
 
     const currentX = startX + (endX - startX) * easeProgress;
     const currentY = startY + (endY - startY) * easeProgress;
@@ -220,48 +239,29 @@ function animateCursor(startX, startY, endX, endY, duration = 1500) {
   requestAnimationFrame(step);
 }
 
-// DETECT USER CLICKS - Move to next step
+// STRICT CLICK DETECTION - Only exact element
 document.addEventListener('click', (e) => {
   if (!waitingForClick || !targetElement) return;
 
-  // Check if user clicked the target (or nearby)
-  const clickedElement = e.target;
-  const isCorrectClick = clickedElement === targetElement || targetElement.contains(clickedElement);
-
-  if (isCorrectClick) {
+  // Check if EXACTLY the target was clicked
+  if (e.target === targetElement || targetElement.contains(e.target) || e.target.contains(targetElement)) {
     waitingForClick = false;
-    currentStepIndex++;
+    tooltip.style.display = 'none';
     
-    // Celebrate!
+    // Show success
     document.getElementById('currentGuidance').innerHTML = `
-      <div class="current-step" style="background: #10b98114; border-left-color: #10b981;">
-        ✅ Great! Step ${currentStepIndex} complete.
-        <div style="margin-top: 8px;">
-          ⏳ Moving to next step...
-        </div>
+      <div class="current-step" style="background:#10b98114; border-left-color:#10b981;">
+        ✅ Perfect! Moving to next step...
       </div>
     `;
 
-    // Get next step from AI
+    // Move to next step after 800ms
     setTimeout(() => {
-      fetch(`${API_URL}/analyze-element`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          elementText: `Next step after clicking ${targetElement.textContent}`,
-          elementType: 'NEXT_STEP',
-          userRole: currentRole,
-          currentPhase
-        })
-      })
-      .then(r => r.json())
-      .then(data => {
-        executeStep(data.guidance, targetElement.textContent);
-      })
-      .catch(err => console.error('Error:', err));
-    }, 1000);
+      currentStepIndex++;
+      executeCurrentStep();
+    }, 800);
   }
-}, true); // Use capture phase to catch all clicks
+}, true);
 
 const style = document.createElement('style');
 style.innerHTML = `
@@ -277,50 +277,4 @@ document.getElementById('userRole').addEventListener('change', (e) => {
   if (currentRole) window.loadPhases(currentRole);
 });
 
-// Hover detection (only when not in active guidance mode)
-document.addEventListener('mousemove', (e) => {
-  if (isInstrucing) return;
-
-  const element = document.elementFromPoint(e.clientX, e.clientY);
-  
-  if (element && !element.closest('.guide-sidebar') && !element.closest('.guide-tab') && currentRole) {
-    cursor.style.left = (e.clientX - 20) + 'px';
-    cursor.style.top = (e.clientY - 20) + 'px';
-    cursor.style.display = 'block';
-
-    const elementText = element.textContent?.slice(0, 50) || element.getAttribute('aria-label') || '';
-
-    if (elementText.trim()) {
-      fetch(`${API_URL}/analyze-element`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          elementText,
-          elementType: element.tagName,
-          userRole: currentRole,
-          currentPhase
-        })
-      })
-      .then(r => r.json())
-      .then(data => {
-        // Smart tooltip positioning
-        let tooltipX = e.clientX + 20;
-        let tooltipY = e.clientY - 50;
-        
-        if (tooltipY < 10) tooltipY = e.clientY + 20;
-        if (tooltipX > window.innerWidth - 300) tooltipX = e.clientX - 300;
-        
-        tooltip.textContent = data.guidance;
-        tooltip.style.left = tooltipX + 'px';
-        tooltip.style.top = tooltipY + 'px';
-        tooltip.style.display = 'block';
-      })
-      .catch(err => console.error('Error:', err));
-    }
-  } else {
-    tooltip.style.display = 'none';
-    if (!isInstrucing) cursor.style.display = 'none';
-  }
-});
-
-console.log('✓ Frappe Guide loaded - AI will detect your clicks!');
+console.log('✓ Frappe Guide loaded with predefined workflows!');
