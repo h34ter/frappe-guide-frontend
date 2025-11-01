@@ -112,3 +112,18 @@
   border-radius: 4px;
   font-size: 13px;
 }
+
+
+.guide-section input {
+  width: 100%;
+  padding: 10px 12px;
+  background: #374151;
+  border: 1px solid #4B5563;
+  border-radius: 6px;
+  color: #F3F4F6;
+  font-size: 13px;
+}
+
+.guide-section input::placeholder {
+  color: #6B7280;
+}
