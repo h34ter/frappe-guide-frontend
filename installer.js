@@ -2,7 +2,7 @@
 (function() {
   const FRONTEND_URL = window.location.hostname === 'localhost' 
     ? 'http://localhost:3000' 
-    : 'https://frappe-guide-frontend.vercel.app';
+    : 'frappe-guide-frontend.vercel.app';
 
   // Load styles
   const link = document.createElement('link');
