@@ -100,3 +100,34 @@
 
   console.log('✅ embed.js v3 loaded');
 })();
+async function ask(question, context=""){
+  const r = await fetch(API+"/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({question,context})});
+  const {answer} = await r.json();
+  speak(answer);
+  return answer;
+}
+
+async function speak(text){
+  const r = await fetch(API+"/speak",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text})});
+  const blob = await r.blob();
+  const url = URL.createObjectURL(blob);
+  new Audio(url).play();
+}
+
+async function recordAndAsk(){
+  const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+  const rec = new MediaRecorder(stream);
+  const chunks=[];
+  rec.ondataavailable=e=>chunks.push(e.data);
+  rec.start();
+  setTimeout(()=>rec.stop(),5000);
+  rec.onstop=async()=>{
+    const blob=new Blob(chunks);
+    const form=new FormData();
+    form.append("file",blob,"audio.wav");
+    const r=await fetch(API+"/transcribe",{method:"POST",body:form});
+    const {text}=await r.json();
+    const answer=await ask(text);
+    console.log("🗣️",text,"\n🤖",answer);
+  };
+}
