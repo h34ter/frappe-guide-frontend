@@ -1,4 +1,4 @@
-/* ────────── embed.js — Investor-ready Demo Coach (full paste) ────────── */
+/* ────────── embed.js — Investor-ready Demo Coach (clean UI, keyboard toggles) ────────── */
 (function(){
   if (window.FG_INVESTOR_COACH) return;
   window.FG_INVESTOR_COACH = true;
@@ -31,7 +31,7 @@
   .fg-tab{position:fixed;top:42%;right:6px;width:46px;height:130px;background:#071224;border:1px solid #1f2a38;border-radius:10px;
     display:flex;align-items:center;justify-content:center;writing-mode:vertical-rl;text-orientation:mixed;color:#9fb0c9;z-index:2147483650;cursor:pointer;box-shadow:0 8px 20px rgba(2,6,23,.5)}
   .fg-hidden{display:none !important}
-  /* HUD */
+  /* HUD (hidden by default to avoid interrupting) */
   .fg-hud{position:fixed;left:16px;top:12px;background:rgba(2,6,23,.7);color:#cfe8ff;padding:8px 12px;border-radius:8px;border:1px solid rgba(59,130,246,.12);z-index:2147483655;font-family:Inter,Arial;font-size:13px;display:flex;gap:10px;align-items:center}
   .fg-badge{background:#072033;padding:6px 8px;border-radius:6px;border:1px solid #183047;color:#9fd0ff;font-weight:700}
   .fg-progress{height:8px;background:#0b1220;border-radius:8px;overflow:hidden;margin-top:8px}
@@ -39,6 +39,7 @@
   .fg-step-list{position:fixed;left:16px;top:56px;background:rgba(2,6,23,.85);color:#cfe8ff;padding:10px;border-radius:8px;border:1px solid rgba(59,130,246,.06);z-index:2147483655;max-width:340px;max-height:60vh;overflow:auto}
   .fg-step-item{padding:8px;border-radius:6px;margin-bottom:6px;background:transparent;cursor:pointer}
   .fg-step-item.active{background:rgba(59,130,246,.06);border-left:3px solid #3B82F6}
+  /* Options panel (hidden by default) */
   .fg-options{position:fixed;right:500px;bottom:26px;background:#071327;border:1px solid rgba(59,130,246,.06);padding:10px;border-radius:8px;z-index:2147483650;max-height:320px;overflow:auto;width:360px;color:#cfe8ff}
   .fg-options h4{margin:0 0 6px 0}
   .fg-option-row{display:flex;justify-content:space-between;padding:6px;border-bottom:1px dashed rgba(255,255,255,.03);font-size:13px}
@@ -87,21 +88,21 @@
   `;
   document.body.appendChild(panel);
 
-  // HUD (top-left)
-  const hud = document.createElement('div'); hud.className='fg-hud';
+  // HUD (hidden by default)
+  const hud = document.createElement('div'); hud.className='fg-hud fg-hidden';
   hud.innerHTML = `<div class="fg-badge">LIVE DEMO</div><div id="fg-hud-txt" style="min-width:180px">Not running</div><div style="margin-left:8px" id="fg-record-ind" title="Recording status">●</div>`;
   document.body.appendChild(hud);
   document.getElementById('fg-record-ind').style.color = '#4b5563'; // grey when off
 
-  // progress & step list
+  // progress & step list (hidden by default)
   const stepList = document.createElement('div'); stepList.className='fg-step-list fg-hidden'; stepList.id='fg-step-list'; document.body.appendChild(stepList);
 
-  // options box
+  // options box (hidden by default)
   const optionsBox = document.createElement('div'); optionsBox.className='fg-options fg-hidden'; optionsBox.id='fg-options';
   optionsBox.innerHTML = `<h4>Options in viewport</h4><div id="fg-options-list" style="font-size:13px"></div>`;
   document.body.appendChild(optionsBox);
 
-  // minimized tab
+  // minimized tab (remains)
   const tab = document.createElement('div'); tab.className='fg-tab fg-hidden'; tab.id='fg-tab'; tab.textContent='Demo'; document.body.appendChild(tab);
 
   /* controls binding */
@@ -121,7 +122,6 @@
      ------------------------- */
   async function speak(text){
     if (!text) return;
-    // small throttle so repeated calls don't pile
     try {
       if ('speechSynthesis' in window){
         window.speechSynthesis.cancel();
@@ -333,9 +333,7 @@
       };
       guide.onclick = () => { chosenFeatureForLesson = { label: c.label, route: c.route }; panel.querySelector('#fg-opps').style.display='none'; startLesson(chosenFeatureForLesson); };
     }
-    // auto-speak elevator
     if (cards && cards.length>0) speak(generateElevator(cards[0], document.getElementById('fg-job').value));
-    // show step list UI
     renderStepList();
   }
 
@@ -386,7 +384,8 @@
     renderProgress();
     const sel = selectors[i] || ''; const el = findElement(sel, stepText);
     await highlightAndPoint(el);
-    showOptionsNear(el);
+    // options panel will stay hidden by default (user can toggle with 'O')
+    showOptionsNear(el); // populates list but stays hidden unless toggled
     await speak(stepText);
     pushRecord({ type:'step_shown', step:i, text:stepText, ts:Date.now() });
   }
@@ -435,7 +434,7 @@
      Investor UX widgets: progress, step list, options panel, recording
      ============================== */
   function renderProgress(){
-    // progress bar in HUD
+    // progress bar in HUD (HUD is hidden by default)
     if (!document.getElementById('fg-progress')) {
       const bar = document.createElement('div'); bar.id='fg-progress'; bar.className='fg-progress'; bar.innerHTML='<i style="width:0%"></i>';
       hud.appendChild(bar);
@@ -456,11 +455,10 @@
   }
 
   function showOptionsNear(el){
-    if (!el) { optionsBox.classList.add('fg-hidden'); return; }
-    optionsBox.classList.remove('fg-hidden');
+    // populate options list but keep it hidden unless user toggles it with 'O'
+    if (!el) { optionsBox.querySelector('#fg-options-list').innerHTML=''; return; }
     const list = optionsBox.querySelector('#fg-options-list'); list.innerHTML = '';
     const pool = Array.from(document.querySelectorAll('button, a, input, select, [role="button"], [data-label], .btn, .btn-primary')).filter(e=>e.offsetParent!==null);
-    // filter by viewport proximity to el
     const base = el.getBoundingClientRect();
     const nearby = pool.map(p=>({p, r:p.getBoundingClientRect()})).filter(x=>{
       const d = Math.hypot((x.r.left + x.r.width/2) - (base.left + base.width/2), (x.r.top + x.r.height/2) - (base.top + base.height/2));
@@ -513,14 +511,29 @@
   }
 
   /* =========================
-     Keyboard bindings for investor control
+     Keyboard bindings for investor control (including toggles)
      ========================= */
   document.addEventListener('keydown', (e)=>{
+    // core navigation
     if (e.key === 'N' || e.key === 'n') { e.preventDefault(); if (stepIndex < tutorial.length-1) { stepIndex++; displayStepAndPoint(stepIndex); } }
     if (e.key === 'P' || e.key === 'p') { e.preventDefault(); if (stepIndex > 0) { stepIndex--; displayStepAndPoint(stepIndex); } }
     if (e.key === 'R' || e.key === 'r' || e.code === 'Space') { e.preventDefault(); speakStep(stepIndex); }
     if (e.key === 'D' || e.key === 'd') { e.preventDefault(); if (recording) downloadRecording(); else alert('No recording available'); }
     if (e.key === 'T' || e.key === 't') { e.preventDefault(); startRecording(); alert('Recording started'); }
+
+    // UI toggles (hidden by default to avoid interrupting)
+    if (e.key === 'H' || e.key === 'h'){ // toggle HUD
+      e.preventDefault();
+      hud.classList.toggle('fg-hidden');
+    }
+    if (e.key === 'O' || e.key === 'o'){ // toggle Options panel
+      e.preventDefault();
+      optionsBox.classList.toggle('fg-hidden');
+    }
+    if (e.key === 'L' || e.key === 'l'){ // toggle Steps list
+      e.preventDefault();
+      stepList.classList.toggle('fg-hidden');
+    }
   });
 
   /* =========================
@@ -543,7 +556,7 @@
     }
   });
 
-  // options toggle (double-click HUD)
+  // options toggle (double-click HUD) — still works if you reveal HUD
   hud.addEventListener('dblclick', ()=>{ optionsBox.classList.toggle('fg-hidden'); });
 
   /* =========================
@@ -558,8 +571,6 @@
       const div = document.createElement('div'); div.className='fg-option-row'; div.innerHTML = `<div style="max-width:62%">${label||'<no label>'}</div><div style="min-width:38%;text-align:right;color:#9fb0c9;font-size:12px">${selector}</div>`; list.appendChild(div);
     });
   }
-  // quick show options when loaded
-  setTimeout(()=>{/* no-op until user engages */}, 800);
 
   /* =========================
      Utility: try to click or open a route if route present (not used automatically)
@@ -568,7 +579,6 @@
     try {
       if (!route) return false;
       if (window.location.href.includes(route)) return true;
-      // attempt to find sidebar link
       const a = Array.from(document.querySelectorAll('a[href]')).find(x => (x.href||'').includes(route));
       if (a){ a.click(); return true; }
       return false;
@@ -587,5 +597,5 @@
     runDiscovery, quickStart, startLesson, stopLesson, findElement, highlightAndPoint, startRecording, stopRecording, downloadRecording, showAllOptionsInView
   };
 
-  console.log('✅ Frappe Demo Coach — Investor edition loaded');
+  console.log('✅ Frappe Demo Coach — Investor edition loaded (clean UI mode)');
 })();
