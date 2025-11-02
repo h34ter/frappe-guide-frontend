@@ -1,4 +1,4 @@
-/* ────────── embed.js — Investor Demo Coach (FIXED) ────────── */
+/* ────────── embed.js — Investor Demo Coach (CURSOR FIXED) ────────── */
 (function(){
   if (window.FG_INVESTOR_COACH_v5) { console.log('FG_INVESTOR_COACH_v5 already loaded'); return; }
   window.FG_INVESTOR_COACH_v5 = true;
@@ -103,7 +103,6 @@
   let cachedVoice = null;
   function pickVoice(){
     const voices = window.speechSynthesis?.getVoices() || [];
-    // prefer female-ish or Google voice
     return voices.find(v => /Google US|en-US Female|Samantha/i.test(v.name)) 
         || voices.find(v => /female/i.test(v.name)) 
         || voices[0] || null;
@@ -125,14 +124,15 @@
   }
 
   /* =======================
-     DOM matching / cursor logic (HARDENED)
+     DOM matching / cursor logic (FIXED FOR ACCURATE POINTING)
      ======================= */
   const POOL_SELECTORS = 'button,a,input,select,textarea,[role="button"],[data-label],.btn,.btn-primary,.link-item,.module-link';
 
   function isIgnored(el){
     if (!el) return true;
-    return !!el.closest('[data-fg-ignore]'); // ignore our UI and any descendant
+    return !!el.closest('[data-fg-ignore]');
   }
+
   function isVisible(el){
     try{
       if (!el) return false;
@@ -142,6 +142,7 @@
       return r.width > 0 && r.height > 0;
     }catch(e){ return false; }
   }
+
   function inHeader(el){
     try{
       const r = el.getBoundingClientRect();
@@ -152,106 +153,183 @@
     }catch(e){ return true; }
   }
 
-  function nearestActionable(startEl, depthLimit=6){
-    if (!startEl) return null;
-    if (isVisible(startEl) && (['button','a','input','select','textarea'].includes((startEl.tagName||'').toLowerCase()))) return startEl;
-    // inside candidates
-    try{
-      const inside = startEl.querySelector && Array.from(startEl.querySelectorAll(POOL_SELECTORS)).find(e=>isVisible(e) && !inHeader(e));
-      if (inside) return inside;
-    }catch(e){}
-    // search siblings/parents
-    let p = startEl;
-    let depth=0;
-    while(p && depth < depthLimit){
-      try{
-        if (isVisible(p) && (['button','a','input','select','textarea'].includes((p.tagName||'').toLowerCase()))) return p;
-        const found = p.querySelector && p.querySelector(POOL_SELECTORS);
-        if (found && isVisible(found) && !inHeader(found)) return found;
-      }catch(e){}
-      p = p.parentElement; depth++;
+  // IMPROVED: Get text content from element for matching
+  function getElementText(el){
+    if (!el) return '';
+    return (
+      el.innerText ||
+      el.textContent ||
+      el.getAttribute('aria-label') ||
+      el.getAttribute('data-label') ||
+      el.getAttribute('placeholder') ||
+      el.getAttribute('title') ||
+      el.value ||
+      ''
+    ).trim().toLowerCase();
+  }
+
+  // IMPROVED: Better scoring system for element matching
+  function scoreMatch(el, searchText){
+    if (!searchText) return 0;
+    const text = getElementText(el);
+    const search = searchText.toLowerCase().trim();
+    
+    if (!text) return 0;
+    
+    // Exact match = highest score
+    if (text === search) return 1000;
+    
+    // Exact word match (e.g., "buying" matches "Buying" button)
+    const words = text.split(/\s+/);
+    if (words.includes(search)) return 900;
+    
+    // Starts with search term
+    if (text.startsWith(search)) return 800;
+    
+    // Search term is at word boundary
+    if (new RegExp(`\\b${search}\\b`, 'i').test(text)) return 700;
+    
+    // Contains search term
+    if (text.includes(search)) return 500;
+    
+    // Partial word match
+    const searchWords = search.split(/\s+/);
+    let partialScore = 0;
+    for (const word of searchWords) {
+      if (text.includes(word)) partialScore += 100;
     }
-    // fallback: first visible actionable outside header
-    return Array.from(document.querySelectorAll(POOL_SELECTORS)).find(e=>isVisible(e) && !inHeader(e)) || null;
+    
+    return partialScore;
   }
 
-  function buildFingerprint(el){
-    if (!el) return {};
-    return {
-      tag: (el.tagName||'').toLowerCase(),
-      id: el.id||null,
-      cls: (el.className||'').split(/\s+/).slice(0,2).join(' '),
-      text: ((el.innerText||el.getAttribute('aria-label')||el.getAttribute('placeholder')||el.getAttribute('data-label')||'')+'').trim().slice(0,80)
-    };
+  // IMPROVED: Find the actual clickable element, not wrapper
+  function getClickableElement(el){
+    if (!el) return null;
+    
+    // If it's already a button/link/input, return it
+    const tagName = (el.tagName || '').toLowerCase();
+    if (['button', 'a', 'input', 'select', 'textarea'].includes(tagName)) {
+      return el;
+    }
+    
+    // Check if it has role="button"
+    if (el.getAttribute && el.getAttribute('role') === 'button') {
+      return el;
+    }
+    
+    // Look for a clickable child (prefer the one with most text)
+    const clickableChildren = el.querySelectorAll && Array.from(
+      el.querySelectorAll('button, a, [role="button"], .btn')
+    ).filter(isVisible);
+    
+    if (clickableChildren && clickableChildren.length) {
+      // Return the one with most content
+      return clickableChildren.sort((a, b) => 
+        getElementText(b).length - getElementText(a).length
+      )[0];
+    }
+    
+    // If element has click handlers, return it
+    if (el.onclick || el.getAttribute('onclick')) {
+      return el;
+    }
+    
+    return el;
   }
 
+  // CORE FIX: Completely rewritten findElement function
   function findElement(selector, textFallback){
-    // 1. try selector(s)
-    if (selector){
-      const parts = selector.split(',').map(s=>s.trim()).filter(Boolean);
-      for (const p of parts){
-        try{
-          const el = document.querySelector(p);
-          if (el && isVisible(el) && !inHeader(el)) return nearestActionable(el) || el;
-        }catch(e){}
-      }
-    }
-
-    // pool
-    const pool = Array.from(document.querySelectorAll(POOL_SELECTORS)).filter(e=>isVisible(e) && !inHeader(e));
-
-    const q = (textFallback||'').toLowerCase().trim();
-
-    if (q){
-      // prefer exact label
-      for (const el of pool){
-        const label = ((el.innerText||el.value||el.getAttribute('data-label')||el.getAttribute('aria-label')||'')+'').trim().toLowerCase();
-        if (label === q) return el;
-      }
-      // prefer startsWith
-      for (const el of pool){
-        const label = ((el.innerText||el.value||el.getAttribute('data-label')||el.getAttribute('aria-label')||'')+'').trim().toLowerCase();
-        if (label.startsWith(q)) return el;
-      }
-      // includes
-      for (const el of pool){
-        const label = ((el.innerText||el.value||el.getAttribute('data-label')||el.getAttribute('aria-label')||'')+'').trim().toLowerCase();
-        if (label.includes(q)) return el;
-      }
-
-      // leaf text nodes: find leaves that include the text and take nearest actionable
-      const leaves = Array.from(document.querySelectorAll('body *')).filter(n => n.children.length === 0 && n.innerText && n.innerText.trim().toLowerCase().includes(q) && !isIgnored(n));
-      if (leaves.length){
-        // score by closeness to viewport center
-        const centerX = window.innerWidth/2, centerY = window.innerHeight/2;
-        let best = null, bestScore = Infinity;
-        for (const l of leaves){
-          const r = l.getBoundingClientRect();
-          const cx = r.left + r.width/2, cy = r.top + r.height/2;
-          const d = Math.hypot(cx-centerX, cy-centerY);
-          if (d < bestScore){ bestScore = d; best = l; }
-        }
-        if (best){
-          const near = nearestActionable(best);
-          if (near) return near;
+    console.log(`🎯 Finding element: selector="${selector}", text="${textFallback}"`);
+    
+    // Step 1: Try CSS selector first
+    if (selector) {
+      const parts = selector.split(',').map(s => s.trim()).filter(Boolean);
+      for (const sel of parts) {
+        try {
+          const elements = Array.from(document.querySelectorAll(sel))
+            .filter(el => isVisible(el) && !inHeader(el));
+          
+          if (elements.length > 0) {
+            console.log(`✓ Found ${elements.length} elements with selector "${sel}"`);
+            // If we have text fallback, score each element
+            if (textFallback) {
+              const scored = elements.map(el => ({
+                el,
+                score: scoreMatch(el, textFallback)
+              })).sort((a, b) => b.score - a.score);
+              
+              if (scored[0].score > 0) {
+                const best = getClickableElement(scored[0].el);
+                console.log(`✓ Best match: "${getElementText(best)}" (score: ${scored[0].score})`);
+                return best;
+              }
+            }
+            // No text fallback, return first visible
+            return getClickableElement(elements[0]);
+          }
+        } catch(e) {
+          console.warn(`Selector error: ${sel}`, e);
         }
       }
     }
 
-    // fallback -> first pool element
-    return pool[0] || null;
+    // Step 2: Search by text in all interactive elements
+    if (!textFallback) {
+      console.log('⚠️ No text fallback provided');
+      return null;
+    }
+
+    const searchText = textFallback.toLowerCase().trim();
+    console.log(`🔍 Searching by text: "${searchText}"`);
+
+    // Get all potentially clickable elements
+    const pool = Array.from(document.querySelectorAll(POOL_SELECTORS))
+      .filter(el => isVisible(el) && !inHeader(el));
+
+    console.log(`📦 Pool size: ${pool.length} elements`);
+
+    // Score all elements
+    const scored = pool.map(el => ({
+      el,
+      score: scoreMatch(el, searchText),
+      text: getElementText(el)
+    })).filter(item => item.score > 0)
+      .sort((a, b) => b.score - a.score);
+
+    if (scored.length > 0) {
+      console.log(`✓ Top 3 matches:`, scored.slice(0, 3).map(s => 
+        `"${s.text}" (${s.score})`
+      ));
+      return getClickableElement(scored[0].el);
+    }
+
+    console.log('❌ No matches found');
+    return null;
   }
 
-  async function waitForScrollToFinish(el, timeout=800){
+  async function waitForScrollToFinish(el, timeout=1000){
     return new Promise(resolve=>{
       const start = Date.now();
+      let lastTop = -9999;
       const check = ()=>{
         try{
           const r = el.getBoundingClientRect();
+          const currentTop = r.top;
+          
+          // Check if element is centered
           const dy = Math.abs((r.top + r.bottom)/2 - window.innerHeight/2);
           const dx = Math.abs((r.left + r.right)/2 - window.innerWidth/2);
-          if (dy < 24 && dx < 48) return resolve();
+          
+          // Check if scroll has stopped (position hasn't changed)
+          const hasSettled = Math.abs(currentTop - lastTop) < 1;
+          
+          if ((dy < 50 && dx < 100) || hasSettled) {
+            return resolve();
+          }
+          
+          lastTop = currentTop;
         }catch(e){}
+        
         if (Date.now() - start > timeout) return resolve();
         requestAnimationFrame(check);
       };
@@ -260,28 +338,75 @@
   }
 
   async function highlightAndPoint(el){
-    // remove existing
-    document.querySelectorAll('[data-fg-highlight]').forEach(x=>{ x.classList.remove('fg-outline'); x.removeAttribute('data-fg-highlight'); });
-    if (!el){ cursor.style.display='none'; cursor.style.opacity='0'; return; }
-
-    // ensure actionable
-    if (!el.closest && !['button','a','input','select','textarea'].includes((el.tagName||'').toLowerCase())){
-      el = nearestActionable(el) || el;
+    // Remove existing highlights
+    document.querySelectorAll('[data-fg-highlight]').forEach(x=>{
+      x.classList.remove('fg-outline');
+      x.removeAttribute('data-fg-highlight');
+    });
+    
+    if (!el){
+      cursor.style.display='none';
+      cursor.style.opacity='0';
+      return;
     }
 
-    try { el.scrollIntoView({behavior:'smooth', block:'center', inline:'center'}); await waitForScrollToFinish(el); } catch(e){}
+    console.log(`👉 Highlighting: "${getElementText(el)}" (${el.tagName})`);
 
-    await new Promise(r=>setTimeout(r,120)); // give browser a beat
+    // Ensure we have the clickable element
+    const clickable = getClickableElement(el);
+    
+    // Scroll into view - use smooth scrolling
+    try {
+      clickable.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+        inline: 'center'
+      });
+      await waitForScrollToFinish(clickable);
+    } catch(e) {
+      console.warn('Scroll error:', e);
+    }
+
+    // Small delay to ensure layout is stable
+    await new Promise(r => setTimeout(r, 200));
+
+    // Position cursor
     try{
-      const rect = el.getBoundingClientRect();
-      const left = Math.max(6, rect.left + rect.width/2 - 28 + window.scrollX);
-      const top  = Math.max(6, rect.top + rect.height/2 - 28 + window.scrollY);
-      cursor.style.display='flex'; cursor.style.opacity='1'; cursor.style.left = left + 'px'; cursor.style.top = top + 'px';
-    }catch(e){ cursor.style.display='none'; cursor.style.opacity='0'; }
+      const rect = clickable.getBoundingClientRect();
+      
+      // Calculate center of element
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      
+      // Cursor is 56px, so offset by 28px to center it
+      const left = Math.max(6, centerX - 28 + window.scrollX);
+      const top = Math.max(6, centerY - 28 + window.scrollY);
+      
+      cursor.style.display = 'flex';
+      cursor.style.opacity = '1';
+      cursor.style.left = left + 'px';
+      cursor.style.top = top + 'px';
+      
+      console.log(`✓ Cursor positioned at (${Math.round(left)}, ${Math.round(top)})`);
+    }catch(e){
+      console.error('Cursor positioning error:', e);
+      cursor.style.display = 'none';
+      cursor.style.opacity = '0';
+    }
 
-    el.classList.add('fg-outline'); el.setAttribute('data-fg-highlight','1');
-    // auto remove highlight after some time
-    setTimeout(()=>{ try{ if (el && el.getAttribute && el.getAttribute('data-fg-highlight')){ el.classList.remove('fg-outline'); el.removeAttribute('data-fg-highlight'); } }catch(e){} }, 9000);
+    // Add outline
+    clickable.classList.add('fg-outline');
+    clickable.setAttribute('data-fg-highlight', '1');
+    
+    // Remove highlight after delay
+    setTimeout(()=>{
+      try{
+        if (clickable.getAttribute('data-fg-highlight')){
+          clickable.classList.remove('fg-outline');
+          clickable.removeAttribute('data-fg-highlight');
+        }
+      }catch(e){}
+    }, 9000);
   }
 
   /* =======================
@@ -347,7 +472,6 @@
       guide.onclick = () => { chosenFeature = { label: c.label, route: c.route }; $('#fg-opps').style.display='none'; startLesson(chosenFeature); };
     }
     if (cards && cards.length) speak(`Top suggestion: ${cards[0].label}`);
-    renderStepList();
   }
 
   function infoFallback(html){
@@ -381,7 +505,6 @@
         tutorial.unshift(`Open ${feature.label} in ${feature.route || 'the app'}`); selectors.unshift(null);
       }
     }
-    // minimize UI
     panel.classList.add('fg-hidden'); tab.classList.remove('fg-hidden');
     $('#fg-setup').style.display='none'; $('#fg-opps').style.display='none'; $('#fg-lesson').style.display='block';
     stepIndex = 0; document.addEventListener('click', onClickHandler, true);
@@ -393,7 +516,20 @@
     const stepText = tutorial[i] || '';
     $('#fg-info').innerHTML = `<div class="fg-stepcard"><strong>Step ${i+1}/${tutorial.length}</strong><div style="margin-top:8px">${stepText}</div></div>`;
     renderProgress();
-    const sel = selectors[i] || ''; const el = findElement(sel, stepText);
+    
+    console.log(`\n═══ STEP ${i+1} ═══`);
+    console.log(`Text: "${stepText}"`);
+    console.log(`Selector: "${selectors[i] || 'none'}"`);
+    
+    const sel = selectors[i] || '';
+    const el = findElement(sel, stepText);
+    
+    if (el) {
+      console.log(`✓ Found element: "${getElementText(el)}"`);
+    } else {
+      console.log(`✗ No element found`);
+    }
+    
     await highlightAndPoint(el);
     showOptionsNear(el);
     await speak(stepText);
@@ -414,93 +550,9 @@
     let expectedEl = findElement(expectedSel, tutorial[stepIndex]);
     const clicked = ev.target;
     pushRecord({ type:'click', target: describeEl(clicked), stepExpected: stepIndex, ts: Date.now() });
-    if (expectedEl && (expectedEl === clicked || expectedEl.contains(clicked))){
+    
+    if (expectedEl && (expectedEl === clicked || expectedEl.contains(clicked) || clicked.contains(expectedEl))){
       stepIndex++;
       if (stepIndex >= tutorial.length){
         infoFallback(`<strong>✅ Demo complete</strong><div style="margin-top:6px">Enable workflows, train team, or run sandbox.</div>`);
-        await highlightAndPoint(null); cursor.style.opacity='0'; await speak("✅ Demo complete.");
-        document.removeEventListener('click', onClickHandler, true); tab.classList.remove('fg-hidden'); panel.classList.add('fg-hidden'); pushRecord({ type:'demo_complete', ts:Date.now() });
-        return;
-      } else {
-        await speak("Nice — moving to the next step.");
-        displayStepAndPoint(stepIndex);
-      }
-    } else {
-      await speak("Not quite — I'm pointing to the best option. Look for the highlighted control.");
-      if (expectedEl) { await highlightAndPoint(expectedEl); try{ expectedEl.animate([{transform:'scale(1)'},{transform:'scale(1.03)'},{transform:'scale(1)'}],{duration:350}); }catch(e){} }
-      else await speak("I can't find that exact control on this page. Use the left menu or search.");
-      pushRecord({ type:'wrong_click', target: describeEl(clicked), expected: describeEl(expectedEl), ts: Date.now() });
-    }
-  }
-
-  function stopLesson(){
-    tutorial=[]; selectors=[]; stepIndex=0;
-    panel.querySelector('#fg-setup').style.display='block'; panel.querySelector('#fg-opps').style.display='none'; panel.querySelector('#fg-lesson').style.display='none';
-    document.removeEventListener('click', onClickHandler, true); highlightAndPoint(null); cursor.style.opacity='0'; panel.classList.remove('fg-hidden'); tab.classList.add('fg-hidden');
-    speak("Demo stopped."); pushRecord({ type:'demo_stopped', ts:Date.now() });
-  }
-
-  function renderProgress(){
-    if (!document.getElementById('fg-progress')){
-      const bar = document.createElement('div'); bar.id='fg-progress'; bar.className='fg-progress'; bar.innerHTML='<i style="width:0%"></i>'; hud.appendChild(bar);
-    }
-    const pct = tutorial && tutorial.length ? Math.round(((stepIndex)/tutorial.length)*100) : 0;
-    document.querySelector('#fg-progress > i').style.width = `${pct}%`;
-    hud.querySelector('#fg-hud-txt').textContent = `Step ${Math.min(stepIndex+1, tutorial.length)}/${tutorial.length || 0}`;
-  }
-
-  function showOptionsNear(el){
-    if (!el){ optionsBox.classList.add('fg-hidden'); return; }
-    optionsBox.classList.remove('fg-hidden');
-    const list = optionsBox.querySelector('#fg-options-list'); list.innerHTML = '';
-    const pool = Array.from(document.querySelectorAll(POOL_SELECTORS)).filter(e=>isVisible(e) && !inHeader(e));
-    const base = el.getBoundingClientRect();
-    const nearby = pool.map(p=>({p,r:p.getBoundingClientRect()})).filter(x=>{
-      const d = Math.hypot((x.r.left + x.r.width/2) - (base.left + base.width/2), (x.r.top + x.r.height/2) - (base.top + base.height/2));
-      return d < Math.max(window.innerWidth, window.innerHeight) * 0.6;
-    }).slice(0,25);
-    for (const row of nearby){
-      const label = (row.p.innerText||row.p.getAttribute('placeholder')||row.p.getAttribute('aria-label')||row.p.getAttribute('data-label')||'').trim().replace(/\s+/g,' ');
-      const div = document.createElement('div'); div.className='fg-option-row';
-      div.innerHTML = `<div style="max-width:62%">${label || '<no label>'}</div><div style="min-width:38%;text-align:right;color:#9fb0c9;font-size:12px">${buildSimpleSelector(row.p)}</div>`;
-      list.appendChild(div);
-    }
-  }
-
-  function buildSimpleSelector(el){
-    if (!el) return '';
-    if (el.id) return `#${el.id}`;
-    const dl = el.getAttribute && (el.getAttribute('data-label') || el.getAttribute('data-doctype'));
-    if (dl) return `[data-label="${dl}"]`;
-    const cls = (el.className||'').split(/\s+/)[0];
-    if (cls) return `.${cls}`;
-    const text = (el.innerText||'').trim().replace(/"/g,'').slice(0,40);
-    if (text) return `button:has-text("${text}")`;
-    return el.tagName.toLowerCase();
-  }
-
-  function describeEl(el){
-    if (!el) return null;
-    return { tag: el.tagName.toLowerCase(), text: (el.innerText||'').slice(0,80).trim(), id: el.id||null, cls: el.className||null };
-  }
-
-  function pushRecord(o){ if (!recording) return; recordEvents.push(Object.assign({ ts: Date.now() }, o)); }
-
-  function startRecording(){ recording=true; recordEvents=[]; hud.querySelector('#fg-record-ind').style.color='#10b981'; pushRecord({ type:'record_start', ts:Date.now() }); hud.querySelector('#fg-hud-txt').textContent='Recording'; }
-  function stopRecording(){ recording=false; hud.querySelector('#fg-record-ind').style.color='#4b5563'; pushRecord({ type:'record_stop', ts:Date.now() }); hud.querySelector('#fg-hud-txt').textContent='Ready'; }
-  function downloadRecording(){ const blob = new Blob([JSON.stringify({ events: recordEvents, meta:{ job: document.getElementById('fg-job').value, created: new Date().toISOString() } }, null, 2)], { type:'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `frappe-demo-${Date.now()}.json`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); }
-
-  // keyboard shortcuts
-  document.addEventListener('keydown', (e)=>{
-    if (e.key==='N' || e.key==='n'){ e.preventDefault(); if (stepIndex < tutorial.length-1) { stepIndex++; displayStepAndPoint(stepIndex); } }
-    if (e.key==='P' || e.key==='p'){ e.preventDefault(); if (stepIndex > 0) { stepIndex--; displayStepAndPoint(stepIndex); } }
-    if (e.key==='R' || e.key==='r' || e.code==='Space'){ e.preventDefault(); speakStep(stepIndex); }
-    if (e.key==='O' || e.key==='o'){ e.preventDefault(); optionsBox.classList.toggle('fg-hidden'); }
-    if (e.key==='T' || e.key==='t'){ e.preventDefault(); if (!recording) { startRecording(); alert('Recording started'); } else { downloadRecording(); } }
-  });
-
-  // expose runtime controls
-  window.FG_INVESTOR = { runDiscovery, quickStart, startLesson, stopLesson, findElement, highlightAndPoint, startRecording, stopRecording, downloadRecording, showOptionsNear };
-
-  console.log('✅ Frappe Demo Coach v5 loaded — hardened matching, UI-hidden, improved TTS and cursor');
-})();
+        await highlightAn
