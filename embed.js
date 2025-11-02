@@ -1,4 +1,4 @@
-/* ────────── embed.js — Investor-ready Demo Coach (clean UI, keyboard toggles) ────────── */
+/* ────────── embed.js — Investor-ready Demo Coach (STEPS REMOVED) ────────── */
 (function(){
   if (window.FG_INVESTOR_COACH) return;
   window.FG_INVESTOR_COACH = true;
@@ -36,9 +36,6 @@
   .fg-badge{background:#072033;padding:6px 8px;border-radius:6px;border:1px solid #183047;color:#9fd0ff;font-weight:700}
   .fg-progress{height:8px;background:#0b1220;border-radius:8px;overflow:hidden;margin-top:8px}
   .fg-progress > i{display:block;height:100%;background:linear-gradient(90deg,#60a5fa,#3b82f6);width:0%}
-  .fg-step-list{position:fixed;left:16px;top:56px;background:rgba(2,6,23,.85);color:#cfe8ff;padding:10px;border-radius:8px;border:1px solid rgba(59,130,246,.06);z-index:2147483655;max-width:340px;max-height:60vh;overflow:auto}
-  .fg-step-item{padding:8px;border-radius:6px;margin-bottom:6px;background:transparent;cursor:pointer}
-  .fg-step-item.active{background:rgba(59,130,246,.06);border-left:3px solid #3B82F6}
   /* Options panel (hidden by default) */
   .fg-options{position:fixed;right:500px;bottom:26px;background:#071327;border:1px solid rgba(59,130,246,.06);padding:10px;border-radius:8px;z-index:2147483650;max-height:320px;overflow:auto;width:360px;color:#cfe8ff}
   .fg-options h4{margin:0 0 6px 0}
@@ -94,9 +91,6 @@
   document.body.appendChild(hud);
   document.getElementById('fg-record-ind').style.color = '#4b5563'; // grey when off
 
-  // progress & step list (hidden by default)
-  const stepList = document.createElement('div'); stepList.className='fg-step-list fg-hidden'; stepList.id='fg-step-list'; document.body.appendChild(stepList);
-
   // options box (hidden by default)
   const optionsBox = document.createElement('div'); optionsBox.className='fg-options fg-hidden'; optionsBox.id='fg-options';
   optionsBox.innerHTML = `<h4>Options in viewport</h4><div id="fg-options-list" style="font-size:13px"></div>`;
@@ -151,26 +145,32 @@
   function findNearestActionable(startEl, opts={maxParentDepth:3}){
     if (!startEl) return null;
     if (isActionable(startEl)) return startEl;
+
+    // prefer actionable elements that are not in header/logo by excluding common header containers
+    const headerCandidates = ['header','nav','.navbar','.topbar','.site-header','#header'];
     const desc = startEl.querySelector && Array.from(startEl.querySelectorAll('*'));
     if (desc && desc.length){
-      for (const d of desc) if (isActionable(d) && d.offsetParent !== null) return d;
+      for (const d of desc) if (isActionable(d) && d.offsetParent !== null && !headerCandidates.some(h=>closestMatch(d,h))) return d;
     }
+
     const parent = startEl.parentElement;
     if (parent){
       const siblings = Array.from(parent.children);
       for (const s of siblings){
-        if (isActionable(s) && s.offsetParent !== null) return s;
+        if (isActionable(s) && s.offsetParent !== null && !headerCandidates.some(h=>closestMatch(s,h))) return s;
         const childCandidate = s.querySelector && s.querySelector('button, a, input, select, [role="button"], [data-label], .btn, .btn-primary');
-        if (childCandidate && childCandidate.offsetParent !== null) return childCandidate;
+        if (childCandidate && childCandidate.offsetParent !== null && !headerCandidates.some(h=>closestMatch(childCandidate,h))) return childCandidate;
       }
     }
+
     let p = startEl.parentElement; let depth = 0;
     while (p && depth < opts.maxParentDepth){
       const found = p.querySelector && p.querySelector('button, a, input, select, [role="button"], [data-label], .btn, .btn-primary');
-      if (found && found.offsetParent !== null) return found;
+      if (found && found.offsetParent !== null && !headerCandidates.some(h=>closestMatch(found,h))) return found;
       p = p.parentElement; depth++;
     }
-    const allClickable = Array.from(document.querySelectorAll('button, a, input, select, [role="button"], [data-label], .btn, .btn-primary')).filter(e=>e.offsetParent !== null);
+
+    const allClickable = Array.from(document.querySelectorAll('button, a, input, select, [role="button"], [data-label], .btn, .btn-primary')).filter(e=>e.offsetParent !== null && !headerCandidates.some(h=>closestMatch(e,h)));
     if (allClickable.length === 0) return null;
     try {
       const rect = startEl.getBoundingClientRect();
@@ -185,6 +185,13 @@
       if (bestDist < Math.max(window.innerHeight, window.innerWidth)*0.7) return best;
     } catch(e){}
     return null;
+  }
+
+  // helper used by header exclusion
+  function closestMatch(el, selector){
+    try {
+      return el.closest && el.closest(selector);
+    } catch(e){ return false; }
   }
 
   function findElement(selector, textFallback){
@@ -226,6 +233,15 @@
       }
     }
     const any = Array.from(document.querySelectorAll(poolSelectors)).filter(e=>e.offsetParent !== null);
+    // prefer center-of-screen items over header/logo (bias)
+    any.sort((a,b)=>{
+      try{
+        const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+        const ca = Math.hypot((ra.left+ra.right)/2 - window.innerWidth/2, (ra.top+ra.bottom)/2 - window.innerHeight/2);
+        const cb = Math.hypot((rb.left+rb.right)/2 - window.innerWidth/2, (rb.top+rb.bottom)/2 - window.innerHeight/2);
+        return ca - cb;
+      }catch(e){ return 0; }
+    });
     return any[0] || null;
   }
 
@@ -334,7 +350,6 @@
       guide.onclick = () => { chosenFeatureForLesson = { label: c.label, route: c.route }; panel.querySelector('#fg-opps').style.display='none'; startLesson(chosenFeatureForLesson); };
     }
     if (cards && cards.length>0) speak(generateElevator(cards[0], document.getElementById('fg-job').value));
-    renderStepList();
   }
 
   function generatePitch(item, job, industry){
@@ -381,7 +396,6 @@
   async function displayStepAndPoint(i){
     const stepText = tutorial[i] || '';
     infoEl.innerHTML = `<div class="fg-stepcard"><strong>Step ${i+1}/${tutorial.length}</strong><div style="margin-top:8px">${stepText}</div></div>`;
-    renderProgress();
     const sel = selectors[i] || ''; const el = findElement(sel, stepText);
     await highlightAndPoint(el);
     // options panel will stay hidden by default (user can toggle with 'O')
@@ -431,31 +445,9 @@
   }
 
   /* ==============================
-     Investor UX widgets: progress, step list, options panel, recording
+     Options panel population, recording & utils
      ============================== */
-  function renderProgress(){
-    // progress bar in HUD (HUD is hidden by default)
-    if (!document.getElementById('fg-progress')) {
-      const bar = document.createElement('div'); bar.id='fg-progress'; bar.className='fg-progress'; bar.innerHTML='<i style="width:0%"></i>';
-      hud.appendChild(bar);
-    }
-    const pct = tutorial && tutorial.length ? Math.round(((stepIndex)/tutorial.length)*100) : 0;
-    document.querySelector('#fg-progress > i').style.width = `${pct}%`;
-    hud.querySelector('#fg-hud-txt').textContent = `Step ${Math.min(stepIndex+1, tutorial.length)}/${tutorial.length || 0}`;
-    renderStepList();
-  }
-
-  function renderStepList(){
-    if (!tutorial || tutorial.length===0){ stepList.classList.add('fg-hidden'); return; }
-    stepList.classList.remove('fg-hidden'); stepList.innerHTML = `<div style="font-weight:700;margin-bottom:8px">Steps</div>`;
-    tutorial.forEach((t,i)=>{
-      const div = document.createElement('div'); div.className = 'fg-step-item' + (i===stepIndex?' active':''); div.textContent = `${i+1}. ${t}`; div.onclick = ()=>{ stepIndex=i; displayStepAndPoint(i); };
-      stepList.appendChild(div);
-    });
-  }
-
   function showOptionsNear(el){
-    // populate options list but keep it hidden unless user toggles it with 'O'
     if (!el) { optionsBox.querySelector('#fg-options-list').innerHTML=''; return; }
     const list = optionsBox.querySelector('#fg-options-list'); list.innerHTML = '';
     const pool = Array.from(document.querySelectorAll('button, a, input, select, [role="button"], [data-label], .btn, .btn-primary')).filter(e=>e.offsetParent!==null);
@@ -511,7 +503,7 @@
   }
 
   /* =========================
-     Keyboard bindings for investor control (including toggles)
+     Keyboard bindings for investor control (H: HUD, O: Options)
      ========================= */
   document.addEventListener('keydown', (e)=>{
     // core navigation
@@ -529,10 +521,6 @@
     if (e.key === 'O' || e.key === 'o'){ // toggle Options panel
       e.preventDefault();
       optionsBox.classList.toggle('fg-hidden');
-    }
-    if (e.key === 'L' || e.key === 'l'){ // toggle Steps list
-      e.preventDefault();
-      stepList.classList.toggle('fg-hidden');
     }
   });
 
@@ -597,5 +585,5 @@
     runDiscovery, quickStart, startLesson, stopLesson, findElement, highlightAndPoint, startRecording, stopRecording, downloadRecording, showAllOptionsInView
   };
 
-  console.log('✅ Frappe Demo Coach — Investor edition loaded (clean UI mode)');
+  console.log('✅ Frappe Demo Coach — Investor edition loaded (STEPS REMOVED)');
 })();
