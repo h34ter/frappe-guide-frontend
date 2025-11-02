@@ -32,9 +32,11 @@
   .fg-badge{background:#072033;padding:6px 8px;border-radius:6px;border:1px solid #183047;color:#9fd0ff;font-weight:700}
   .fg-progress{height:8px;background:#0b1220;border-radius:8px;overflow:hidden;margin-top:8px}
   .fg-progress>i{display:block;height:100%;background:linear-gradient(90deg,#60a5fa,#3b82f6);width:0%}
-  .fg-options{position:fixed;right:500px;bottom:26px;background:#071327;border:1px solid rgba(59,130,246,.06);padding:10px;border-radius:8px;
-    z-index:2147483650;max-height:320px;overflow:auto;width:360px;color:#cfe8ff}
-  .fg-options h4{margin:0 0 6px 0}.fg-option-row{display:flex;justify-content:space-between;padding:6px;border-bottom:1px dashed rgba(255,255,255,.03);font-size:13px}`;
+  .fg-options{position:absolute;/* changed from fixed to absolute for near-element placement */
+    background:#071327;border:1px solid rgba(59,130,246,.06);padding:10px;border-radius:8px;
+    z-index:2147483650;max-height:320px;overflow:auto;width:360px;color:#cfe8ff;box-shadow:0 8px 30px rgba(2,6,23,.6)}
+  .fg-options h4{margin:0 0 6px 0}.fg-option-row{display:flex;justify-content:space-between;padding:8px;border-bottom:1px dashed rgba(255,255,255,.03);font-size:13px;cursor:pointer}
+  .fg-option-row:hover{background:rgba(59,130,246,.03)}`;
   document.head.appendChild(css);
 
   /* ——————————————  CORE ELEMENTS  —————————————— */
@@ -43,7 +45,7 @@
   panel.innerHTML = `
     <h3 style="margin:0 0 8px;color:#3B82F6">🤖 Frappe Demo Coach <span class="fg-small" style="float:right;font-weight:600;color:#9fb0c9">Investor</span></h3>
     <div id="fg-setup">
-      <p class="fg-small" style="margin:0 0 8px">Enter a job and we'll suggest the highest‑impact Frappe features.</p>
+      <p class="fg-small" style="margin:0 0 8px">Enter a job and we'll suggest the highest-impact Frappe features.</p>
       <input id="fg-job" placeholder="e.g., Procurement Manager"/>
       <select id="fg-ind"><option>Manufacturing</option><option>Retail</option><option>Services</option></select>
       <div style="display:flex;gap:8px">
@@ -131,7 +133,7 @@
   }
 
   function findElement(selector, fallbackText) {
-    // 1‑ Exact selector
+    // 1- Exact selector
     if (selector) {
       const parts = selector.split(",").map(s => s.trim()).filter(Boolean);
       for (const sel of parts) {
@@ -142,7 +144,7 @@
       }
     }
     
-    // 2‑ by text match
+    // 2- by text match
     const txt = (fallbackText || "").toLowerCase().trim();
     if (txt) {
       const pool = [...document.querySelectorAll("button,a,input,select,[role='button'],[data-label]")]
@@ -190,8 +192,7 @@
     
     // Auto-remove after 9 seconds
     setTimeout(() => { 
-      el.classList.remove("fg-outline"); 
-      el.removeAttribute("data-fg-h"); 
+      if (el) { el.classList.remove("fg-outline"); el.removeAttribute("data-fg-h"); }
     }, 9000);
   }
 
@@ -324,21 +325,89 @@
     hud.querySelector("#fg-bar i").style.width = `${((stepIndex) / tutorial.length) * 100}%`;
   }
 
+  /* ——————————————  OPTIONS NEARBY (IMPROVED) —————————————— */
+  // showOptionsNear now positions box near element and populates clickable rows
   function showOptionsNear(el) {
-    const list = optionsBox.querySelector("#fg-opt-list"); list.innerHTML = "";
-    if (!el) return;
+    const list = optionsBox.querySelector("#fg-opt-list");
+    list.innerHTML = "";
+    if (!el) { optionsBox.classList.add("fg-hidden"); return; }
+
     const base = el.getBoundingClientRect();
-    const pool = [...document.querySelectorAll("button,a,input,select,[role='button'],[data-label]")].filter(x => isVisible(x) && !HEADER_FILTER(x));
-    pool.filter(p => {
+    // gather actionable pool, filter out headers etc
+    const pool = [...document.querySelectorAll("button,a,input,select,[role='button'],[data-label]")]
+      .filter(x => isVisible(x) && !HEADER_FILTER(x));
+    // sort by distance to hovered element
+    const scored = pool.map(p => {
       const r = p.getBoundingClientRect();
-      return Math.hypot(r.left - base.left, r.top - base.top) < 600;
-    }).slice(0, 20).forEach(p => {
-      const lab = (p.innerText || p.getAttribute("data-label") || "").trim().slice(0, 40) || "<no label>";
-      const row = Object.assign(document.createElement("div"), { className: "fg-option-row" });
-      row.textContent = lab; list.appendChild(row);
+      const dist = Math.hypot(r.left - base.left, r.top - base.top);
+      const lab = (p.innerText || p.getAttribute("data-label") || p.getAttribute("placeholder") || p.title || "").trim();
+      return { p, dist, lab: lab || "<no label>" };
+    }).sort((a, b) => a.dist - b.dist).slice(0, 20);
+
+    // populate rows
+    scored.forEach(s => {
+      const row = document.createElement("div");
+      row.className = "fg-option-row";
+      row.textContent = s.lab.length > 60 ? s.lab.slice(0, 57) + "…" : s.lab;
+      row.onclick = (ev) => {
+        ev.stopPropagation();
+        // highlight and scroll to element, then optionally click it
+        highlightAndPoint(s.p);
+        try { s.p.scrollIntoView({behavior:"smooth",block:"center"}); } catch {}
+        // small delayed synthetic click to allow the highlight to show
+        setTimeout(() => {
+          try { s.p.click(); } catch {}
+        }, 250);
+        hideOptionsSoon();
+      };
+      list.appendChild(row);
     });
+
+    // position optionsBox near the hovered element (but keep within viewport)
+    const padding = 8;
+    const left = Math.max(padding, Math.min(window.innerWidth - 360 - padding, base.right + 12));
+    const top  = Math.max(padding, Math.min(window.innerHeight - 80 - padding, base.top - 8));
+    optionsBox.style.left = left + "px";
+    optionsBox.style.top  = top  + "px";
+    optionsBox.classList.remove("fg-hidden");
   }
 
+  // hide with a small delay so moving between element -> box doesn't immediately hide
+  let hideTimer = null;
+  function hideOptionsSoon() {
+    if (hideTimer) clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => { optionsBox.classList.add("fg-hidden"); }, 600);
+  }
+  function cancelHideOptions() {
+    if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+  }
+
+  // show options on hover of actionable elements
+  document.addEventListener("mouseover", e => {
+    const t = e.target;
+    if (!t) return;
+    const actionable = t.closest && t.closest("button,a,input,select,[role='button'],[data-label]");
+    if (actionable && isVisible(actionable) && !HEADER_FILTER(actionable)) {
+      // show list near this actionable element
+      showOptionsNear(actionable);
+      cancelHideOptions();
+    }
+  }, true);
+
+  // hide when mouse leaves actionable or the options box
+  document.addEventListener("mouseout", e => {
+    const related = e.relatedTarget;
+    // if moving into optionsBox, keep it
+    if (related && (optionsBox.contains(related))) { return; }
+    // if moving from optionsBox to actionable, keep (handled by mouseover)
+    if (related && (related.closest && related.closest(".fg-options"))) return;
+    hideOptionsSoon();
+  }, true);
+
+  optionsBox.addEventListener("mouseenter", cancelHideOptions);
+  optionsBox.addEventListener("mouseleave", hideOptionsSoon);
+
+  /* ——————————————  KEYBOARD SHORTCUTS —————————————— */
   document.addEventListener("keydown", e => {
     if (["N", "n"].includes(e.key)) { e.preventDefault(); if (stepIndex < tutorial.length - 1) { stepIndex++; displayStepAndPoint(stepIndex); } }
     if (["P", "p"].includes(e.key)) { e.preventDefault(); if (stepIndex > 0) { stepIndex--; displayStepAndPoint(stepIndex); } }
@@ -347,5 +416,5 @@
     if (["H", "h"].includes(e.key)) { e.preventDefault(); hud.classList.toggle("fg-hidden"); }
   });
 
-  console.log("✅ Frappe Demo Coach v3.2 loaded (BLUE OUTLINE WRAPPING)");
+  console.log("✅ Frappe Demo Coach v3.2 loaded — OPTIONS hover/click improved");
 })();
