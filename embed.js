@@ -1,7 +1,7 @@
-/* ────────── embed.js — Demo Coach: actionable-target cursor fix (FULL paste) ────────── */
+/* ────────── embed.js — Full fixed copy (speak declared early + actionable cursor) ────────── */
 (function(){
-  if (window.FG_DEMO_COACH_ACTIONABLE) return;
-  window.FG_DEMO_COACH_ACTIONABLE = true;
+  if (window.FG_DEMO_COACH_ACTIONABLE_FIXED) return;
+  window.FG_DEMO_COACH_ACTIONABLE_FIXED = true;
 
   const API = "https://frappe-guide-backend.onrender.com";
   let tutorial = [], selectors = [], stepIndex = 0;
@@ -37,9 +37,10 @@
   cursor.textContent = '●';
   document.body.appendChild(cursor);
 
-  /* PANEL (same UI) */
+  /* PANEL */
   const panel = document.createElement('div');
-  panel.className = 'fg-panel'; panel.id = 'fg-panel-main';
+  panel.className = 'fg-panel';
+  panel.id = 'fg-panel-main';
   panel.innerHTML = `
     <h3 style="margin:0 0 8px;color:#3B82F6">🤖 Frappe Demo Coach</h3>
     <div id="fg-setup">
@@ -72,12 +73,14 @@
   `;
   document.body.appendChild(panel);
 
-  /* MINIMIZED TAB */
+  /* MINIMIZED TAB (hidden by default) */
   const tab = document.createElement('div');
-  tab.className = 'fg-tab fg-hidden'; tab.id = 'fg-tab'; tab.textContent = 'Demo';
+  tab.className = 'fg-tab fg-hidden';
+  tab.id = 'fg-tab';
+  tab.textContent = 'Demo';
   document.body.appendChild(tab);
 
-  // controls binding
+  // controls
   const analyzeBtn = document.getElementById('fg-analyze');
   const skipBtn = document.getElementById('fg-skip');
   const backBtn = document.getElementById('fg-back');
@@ -93,11 +96,48 @@
   startLessonBtn.onclick = () => startLesson(chosenFeatureForLesson);
   repeatBtn.onclick = () => speakStep(stepIndex);
   stopBtn.onclick = stopLesson;
-  tab.onclick = () => { if (panel.classList.contains('fg-hidden')) { panel.classList.remove('fg-hidden'); tab.classList.add('fg-hidden'); } };
 
-  /* --------------------------
-     KEY FIX: Actionable-first element resolution
-     -------------------------- */
+  tab.onclick = () => {
+    if (panel.classList.contains('fg-hidden')) {
+      panel.classList.remove('fg-hidden');
+      tab.classList.add('fg-hidden');
+    }
+  };
+
+  /* ===========================
+     CORE UTILITIES
+     =========================== */
+
+  // SPEAK — defined early so nothing calls an undefined function
+  async function speak(text){
+    if (!text) return;
+    // simple fallback: use backend TTS endpoint if available, otherwise use Web Speech API
+    try {
+      // prefer backend blob (if /speak exists and returns audio)
+      const url = API + '/speak';
+      const r = await fetch(url, { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ text }) }).catch(()=>null);
+      if (r && r.ok){
+        const blob = await r.blob();
+        const audioUrl = URL.createObjectURL(blob);
+        const audio = new Audio(audioUrl);
+        audio.play();
+        return new Promise(resolve => audio.onended = () => { URL.revokeObjectURL(audioUrl); resolve(); });
+      }
+    } catch(e){ /* ignore backend voice errors */ }
+
+    // fallback to browser TTS
+    try {
+      if ('speechSynthesis' in window){
+        return new Promise(resolve => {
+          const ut = new SpeechSynthesisUtterance(text);
+          ut.lang = 'en-US';
+          ut.onend = resolve;
+          window.speechSynthesis.cancel();
+          window.speechSynthesis.speak(ut);
+        });
+      }
+    } catch(e){ console.warn('TTS fallback failed', e); }
+  }
 
   // returns true if element is actionable (clickable) by user
   function isActionable(el){
@@ -109,48 +149,38 @@
     if (el.hasAttribute && el.hasAttribute('data-label')) return true;
     const cls = (el.className || '') + '';
     if (/\b(btn|btn-primary|action|link)\b/.test(cls)) return true;
-    // visible and has onclick handler?
     try {
       if (typeof el.onclick === 'function') return true;
-      // inline onclick attribute
       if (el.getAttribute && el.getAttribute('onclick')) return true;
     } catch(e){}
     return false;
   }
 
-  // find nearest actionable element around a given element (sibling, parent, children, within same section)
-  function findNearestActionable(startEl, opts = { maxParentDepth: 3, maxSearchRadius: 5 }){
+  function findNearestActionable(startEl, opts = { maxParentDepth: 3 }){
     if (!startEl) return null;
-    // 1) if startEl itself is actionable, return it
     if (isActionable(startEl)) return startEl;
-    // 2) search its descendants (prefer immediate)
     const desc = startEl.querySelector && Array.from(startEl.querySelectorAll('*'));
     if (desc && desc.length){
       for (const d of desc){
         if (isActionable(d) && d.offsetParent !== null) return d;
       }
     }
-    // 3) search siblings (breadth-limited)
     const parent = startEl.parentElement;
     if (parent){
       const siblings = Array.from(parent.children);
       for (const s of siblings){
         if (isActionable(s) && s.offsetParent !== null) return s;
-        // children of sibling
         const childCandidate = s.querySelector && s.querySelector('button, a, input, select, [role="button"], [data-label], .btn, .btn-primary');
         if (childCandidate && childCandidate.offsetParent !== null) return childCandidate;
       }
     }
-    // 4) climb parents up to maxParentDepth and search their descendants
     let p = startEl.parentElement;
     let depth = 0;
     while (p && depth < opts.maxParentDepth){
-      // look for actionable inside p
       const found = p.querySelector && p.querySelector('button, a, input, select, [role="button"], [data-label], .btn, .btn-primary');
       if (found && found.offsetParent !== null) return found;
       p = p.parentElement; depth++;
     }
-    // 5) radius search on document: find closest actionable by DOM distance using bounding rect center proximity
     const allClickable = Array.from(document.querySelectorAll('button, a, input, select, [role="button"], [data-label], .btn, .btn-primary')).filter(e=>e.offsetParent !== null);
     if (allClickable.length === 0) return null;
     try {
@@ -165,36 +195,29 @@
         const d = Math.hypot(ccx - cx, ccy - cy);
         if (d < bestDist){ bestDist = d; best = c; }
       }
-      // only return if reasonably close (avoid jumping across page)
       if (bestDist < Math.max(window.innerHeight, window.innerWidth) * 0.6) return best;
     } catch(e){}
     return null;
   }
 
-  // main finder: tries selectors first, then actionable-first fuzzy search
   function findElement(selector, textFallback){
-    // 1) try provided selector (robust CSS) and ensure actionable/visible
+    // selectors first
     if (selector){
       try {
-        // if multiple selectors comma-separated, prefer the first actionable
         const parts = selector.split(',').map(s=>s.trim()).filter(Boolean);
         for (const p of parts){
           try{
             const el = document.querySelector(p);
             if (el && el.offsetParent !== null){
-              // if el is not actionable, try to resolve nearest actionable inside/around it
               if (isActionable(el)) return el;
               const near = findNearestActionable(el);
               if (near) return near;
-              // if not found, return the el only if it's something clickable (anchor etc) else continue
-              // (but we avoid pointing to inert text)
             }
           }catch(e){}
         }
       } catch(e){}
     }
 
-    // 2) actionable-first fuzzy search by text: look only inside clickable candidate pool
     const poolSelectors = 'button, a, input, select, [role="button"], [data-label], .btn, .btn-primary';
     const pool = Array.from(document.querySelectorAll(poolSelectors)).filter(e=>e.offsetParent !== null);
     const lower = (textFallback||'').toLowerCase();
@@ -206,7 +229,6 @@
       }
     }
 
-    // 3) fallback: find any element whose text matches, then resolve nearest actionable (prevents pointing to words)
     if (lower){
       const all = Array.from(document.querySelectorAll('body *'));
       for (const el of all){
@@ -220,24 +242,19 @@
       }
     }
 
-    // 4) last resort: return first actionable in document
     const any = Array.from(document.querySelectorAll(poolSelectors)).filter(e=>e.offsetParent !== null);
     return any[0] || null;
   }
 
-  /* Improved highlight + autoscroll + smooth cursor motion */
   async function highlightAndPoint(el){
-    // clear previous
     document.querySelectorAll('[data-fg-highlight]').forEach(x=>{ x.classList.remove('fg-outline'); x.removeAttribute('data-fg-highlight'); });
     if (!el) { cursor.style.display='none'; cursor.style.opacity='0'; return; }
 
-    // ensure element is actionable (if not, resolve nearest actionable)
     if (!isActionable(el)){
       const resolved = findNearestActionable(el) || el;
       el = resolved;
     }
 
-    // smooth scroll to center
     try { el.scrollIntoView({ behavior: 'smooth', block: 'center', inline:'center' }); await waitForScrollToFinish(el); } catch(e){}
     await new Promise(r=>setTimeout(r,120));
 
@@ -254,7 +271,6 @@
     setTimeout(()=>{ if(el && el.getAttribute && el.getAttribute('data-fg-highlight')) { el.classList.remove('fg-outline'); el.removeAttribute('data-fg-highlight'); } }, 8000);
   }
 
-  // wait for scroll heuristic (same as before)
   function waitForScrollToFinish(targetEl, timeout = 900){
     return new Promise(resolve => {
       const start = Date.now();
@@ -274,18 +290,67 @@
     });
   }
 
-  /* Discovery + UI flow (unchanged behavior) */
+  /* ===========================
+     DISCOVERY & UI FLOW
+     =========================== */
+
+  // runtime diagnostics-enabled runDiscovery (safe, verbosely surfaces failures)
   async function runDiscovery(){
     const job = document.getElementById('fg-job').value.trim();
     const industry = document.getElementById('fg-ind').value;
     if (!job) return alert('Enter job title');
-    analyzeBtn.disabled = true; analyzeBtn.textContent = 'Analyzing...';
+
+    analyzeBtn.disabled = true;
+    analyzeBtn.textContent = 'Analyzing...';
+
+    function showError(msg, details){
+      const info = document.getElementById('fg-info');
+      info.innerHTML = `<div class="fg-stepcard" style="border-left-color:#ef4444"><strong style="color:#fff">Backend error</strong><div style="margin-top:8px;color:#ffdcdc">${msg}</div><pre style="margin-top:8px;color:#e6e6e6;white-space:pre-wrap;font-size:11px">${details}</pre></div>`;
+      console.error('Frappe Demo Coach backend error:', msg, details);
+    }
+
     try {
-      const r = await fetch(API + '/analyze-job', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ job, industry }) });
-      const data = await r.json();
+      const r = await fetch(API + '/analyze-job', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ job, industry }),
+        credentials: 'omit'
+      });
+
+      const text = await r.text();
+      let data = null;
+      try { data = JSON.parse(text); } catch(e){ data = null; }
+
+      if (!r.ok) {
+        showError(`analyze-job returned ${r.status} ${r.statusText}`, text || '<empty body>');
+        analyzeBtn.disabled = false;
+        analyzeBtn.textContent = 'Discover Opportunities';
+        return;
+      }
+
+      if (!data) {
+        showError('analyze-job returned invalid JSON', text || '<empty body>');
+        analyzeBtn.disabled = false;
+        analyzeBtn.textContent = 'Discover Opportunities';
+        return;
+      }
+
       tutorial = data.tutorial || data.tutorials || [];
       selectors = data.selectors || data.selectors || [];
-      const at = await fetch(API + '/atlas'); atlas = await at.json();
+
+      const atResp = await fetch(API + '/atlas');
+      const atlasText = await atResp.text();
+      let atlasJson = null;
+      try { atlasJson = JSON.parse(atlasText); } catch(e){ atlasJson = null; }
+      if (!atResp.ok || !atlasJson) {
+        showError(`/atlas returned ${atResp.status} ${atResp.statusText}`, atlasText || '<empty body>');
+        analyzeBtn.disabled = false;
+        analyzeBtn.textContent = 'Discover Opportunities';
+        return;
+      }
+      atlas = atlasJson;
+
+      // compute matches
       const keywords = [].concat(tutorial.map(t => (t||'').split(/\s+/).slice(-1)[0] || '')).filter(Boolean);
       const jobWords = job.split(/\s+/).map(s=>s.toLowerCase());
       const scored = atlas.map(a => {
@@ -296,6 +361,7 @@
         if ((a.module||'').toLowerCase().includes(job.toLowerCase())) score += 2;
         return {a, score};
       }).filter(x=>x.score>0).sort((x,y)=>y.score-x.score).map(x=>x.a);
+
       const seen = new Set(); const related = [];
       for (const item of scored){
         const key = (item.label||item.name||'').toLowerCase();
@@ -303,16 +369,22 @@
       }
       const cards = related.length ? related : atlas.slice(0,6);
       showOpportunities(cards, job, industry);
-    } catch(e){
-      console.error('discover error', e);
-      alert('Discovery failed — check backend.');
-    } finally { analyzeBtn.disabled = false; analyzeBtn.textContent = 'Discover Opportunities'; }
+
+    } catch (err) {
+      let msg = err && err.message ? err.message : String(err);
+      let details = (err && err.stack) ? err.stack : '';
+      showError('Network or fetch error', msg + '\n' + details);
+    } finally {
+      analyzeBtn.disabled = false;
+      analyzeBtn.textContent = 'Discover Opportunities';
+    }
   }
 
   function showOpportunities(cards, job, industry){
     document.getElementById('fg-setup').style.display='none';
     document.getElementById('fg-opps').style.display='block';
-    cardsEl.innerHTML = ''; let first = null;
+    cardsEl.innerHTML = '';
+    let first = null;
     for (const c of cards){
       const card = document.createElement('div'); card.className='fg-card';
       const title = document.createElement('h4'); title.textContent = c.label || c.name || '(no label)';
@@ -327,17 +399,24 @@
       preview.onclick = async () => {
         const pitch = generatePitch(c, job, industry);
         await speak(pitch);
-        // try find actionable for preview (resolve properly)
         const elCandidate = findElement(null, c.label || c.name);
         if (elCandidate) { await highlightAndPoint(elCandidate); } else {
           infoEl.innerHTML = `<div class="fg-stepcard"><strong>Preview:</strong><div style="margin-top:6px">${pitch}</div></div>`;
         }
       };
-      guide.onclick = () => { chosenFeatureForLesson = { label: c.label, route: c.route }; document.getElementById('fg-opps').style.display='none'; startLesson(chosenFeatureForLesson); };
+      guide.onclick = () => {
+        chosenFeatureForLesson = { label: c.label, route: c.route };
+        document.getElementById('fg-opps').style.display='none';
+        startLesson(chosenFeatureForLesson);
+      };
 
       if (!first) first = c;
     }
-    if (cards && cards.length > 0) { const topPitch = generateElevator(cards[0], document.getElementById('fg-job').value); speak(topPitch); }
+
+    if (cards && cards.length > 0) {
+      const topPitch = generateElevator(cards[0], document.getElementById('fg-job').value);
+      speak(topPitch);
+    }
   }
 
   function generatePitch(item, job, industry){
@@ -359,8 +438,11 @@
       const data = await r.json();
       tutorial = data.tutorial || [];
       selectors = data.selectors || [];
-      document.getElementById('fg-setup').style.display='none'; document.getElementById('fg-opps').style.display='none'; document.getElementById('fg-lesson').style.display='block';
-      stepIndex = 0; document.addEventListener('click', onClickHandler, true);
+      document.getElementById('fg-setup').style.display='none';
+      document.getElementById('fg-opps').style.display='none';
+      document.getElementById('fg-lesson').style.display='block';
+      stepIndex = 0;
+      document.addEventListener('click', onClickHandler, true);
       await speak(`Starting a quick guided demo for ${job}. I'll show you step by step.`);
       await displayStepAndPoint(0);
     }catch(e){ console.error('quick start err', e); alert('Quick start failed'); }
@@ -377,13 +459,20 @@
     }
     if (feature && feature.label && tutorial && tutorial.length){
       if (!tutorial[0].toLowerCase().includes((feature.label||'').toLowerCase())){
-        tutorial.unshift(`Open ${feature.label} in ${feature.route || 'the app'}`); selectors.unshift(null);
+        tutorial.unshift(`Open ${feature.label} in ${feature.route || 'the app'}`);
+        selectors.unshift(null);
       }
     }
-    // minimize UI
-    panel.classList.add('fg-hidden'); tab.classList.remove('fg-hidden');
-    document.getElementById('fg-setup').style.display='none'; document.getElementById('fg-opps').style.display='none'; document.getElementById('fg-lesson').style.display='block';
-    stepIndex = 0; document.addEventListener('click', onClickHandler, true);
+
+    panel.classList.add('fg-hidden');
+    tab.classList.remove('fg-hidden');
+
+    document.getElementById('fg-setup').style.display='none';
+    document.getElementById('fg-opps').style.display='none';
+    document.getElementById('fg-lesson').style.display='block';
+    stepIndex = 0;
+    document.addEventListener('click', onClickHandler, true);
+
     await speak(`We're about to demo ${feature && feature.label ? feature.label + ' — ' : ''}a typical workflow. I'll explain why it matters, then show each step. Pay attention to the options available on each screen.`);
     await displayStepAndPoint(0);
   }
@@ -433,14 +522,19 @@
 
   function stopLesson(){
     tutorial = []; selectors = []; stepIndex = 0;
-    document.getElementById('fg-setup').style.display='block'; document.getElementById('fg-opps').style.display='none'; document.getElementById('fg-lesson').style.display='none';
+    document.getElementById('fg-setup').style.display='block';
+    document.getElementById('fg-opps').style.display='none';
+    document.getElementById('fg-lesson').style.display='none';
     document.removeEventListener('click', onClickHandler, true);
-    highlightAndPoint(null); cursor.style.opacity='0'; panel.classList.remove('fg-hidden'); tab.classList.add('fg-hidden');
+    highlightAndPoint(null);
+    cursor.style.opacity='0';
+    panel.classList.remove('fg-hidden');
+    tab.classList.add('fg-hidden');
     speak("Demo stopped.");
   }
 
   // expose for debugging
   window.FG_DEMO = { runDiscovery, quickStart, startLesson, stopLesson, findElement };
 
-  console.log('✅ Frappe Demo Coach (actionable-target fix) loaded — use Discover Opportunities to begin');
+  console.log('✅ Frappe Demo Coach (actionable-target fixed + speak early) loaded — use Discover Opportunities to begin');
 })();
