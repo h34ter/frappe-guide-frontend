@@ -1,4 +1,4 @@
-/* ────────── embed.js — Investor Demo Coach (FIXED CURSOR) ────────── */
+/* ────────── embed.js — Investor Demo Coach (BLUE OUTLINE ONLY) ────────── */
 (function () {
   if (window.FG_INVESTOR_COACH) return;
   window.FG_INVESTOR_COACH = true;
@@ -10,11 +10,6 @@
   /* ——————————————  STYLE  —————————————— */
   const css = document.createElement("style");
   css.textContent = `
-  .fg-cursor{position:fixed;width:60px;height:60px;border:4px solid #3B82F6;border-radius:50%;
-    background:linear-gradient(180deg,rgba(59,130,246,.18),rgba(59,130,246,.08));
-    box-shadow:0 8px 30px rgba(59,130,246,.25);z-index:2147483647;display:none;
-    align-items:center;justify-content:center;font-size:28px;pointer-events:none;
-    transition:left .35s ease,top .35s ease,opacity .2s}
   .fg-panel{position:fixed;bottom:26px;right:26px;width:460px;background:#071024;
     border:1px solid rgba(59,130,246,.14);border-radius:12px;padding:16px;z-index:2147483646;
     color:#e6eef8;font-family:Inter,Arial;font-size:13px;box-shadow:0 10px 40px rgba(2,6,23,.6)}
@@ -28,7 +23,7 @@
   .fg-card p{margin:6px 0 0 0;font-size:12px;color:#9fb0c9}
   .fg-stepcard{padding:10px;background:linear-gradient(90deg,rgba(59,130,246,.04),rgba(59,130,246,.02));
     border-left:4px solid #3B82F6;margin-top:10px;border-radius:6px}
-  .fg-outline{outline:4px solid #3B82F6!important;outline-offset:4px!important;border-radius:6px}
+  .fg-outline{outline:4px solid #3B82F6!important;outline-offset:4px!important;border-radius:6px;transition:outline 0.3s ease}
   .fg-muted{color:#94a3b8;font-size:12px}
   .fg-tab{position:fixed;top:42%;right:6px;width:46px;height:130px;background:#071224;border:1px solid #1f2a38;border-radius:10px;
     display:flex;align-items:center;justify-content:center;writing-mode:vertical-rl;text-orientation:mixed;color:#9fb0c9;z-index:2147483650;cursor:pointer;box-shadow:0 8px 20px rgba(2,6,23,.5)}
@@ -43,9 +38,6 @@
   document.head.appendChild(css);
 
   /* ——————————————  CORE ELEMENTS  —————————————— */
-  const cursor = Object.assign(document.createElement("div"), { className: "fg-cursor", textContent: "●", style: "opacity:0" });
-  document.body.appendChild(cursor);
-
   const panel = document.createElement("div");
   panel.className = "fg-panel";
   panel.innerHTML = `
@@ -114,10 +106,10 @@
     return new Promise(res => { ut.onend = res; window.speechSynthesis.speak(ut); });
   }
 
-  /* ——————————————  CURSOR / ELEMENT FIND (FIXED)  —————————————— */
+  /* ——————————————  ELEMENT FIND (BLUE OUTLINE ONLY)  —————————————— */
   const HEADER_FILTER = el => {
     const r = el.getBoundingClientRect();
-    if (r.top < 60) return true;                     // in very top bar
+    if (r.top < 60) return true;
     if (el.closest("header,.navbar,.app-header")) return true;
     if (/(brand|logo|navbar)/i.test(el.className || "")) return true;
     return false;
@@ -150,27 +142,24 @@
       }
     }
     
-    // 2‑ by text match (improved - match whole words)
+    // 2‑ by text match
     const txt = (fallbackText || "").toLowerCase().trim();
     if (txt) {
       const pool = [...document.querySelectorAll("button,a,input,select,[role='button'],[data-label]")]
         .filter(e => isVisible(e) && !HEADER_FILTER(e));
       
-      // First try exact match
       for (const el of pool) {
         const label = (el.innerText || el.getAttribute("placeholder") || el.getAttribute("aria-label") || 
                       el.getAttribute("data-label") || el.getAttribute("title") || "").trim().toLowerCase();
         if (label === txt) return el;
       }
       
-      // Then try starts with
       for (const el of pool) {
         const label = (el.innerText || el.getAttribute("placeholder") || el.getAttribute("aria-label") || 
                       el.getAttribute("data-label") || el.getAttribute("title") || "").trim().toLowerCase();
         if (label.startsWith(txt)) return el;
       }
       
-      // Finally try includes
       for (const el of pool) {
         const label = (el.innerText || el.getAttribute("placeholder") || el.getAttribute("aria-label") || 
                       el.getAttribute("data-label") || el.getAttribute("title") || "").trim().toLowerCase();
@@ -178,38 +167,28 @@
       }
     }
     
-    // 3‑ last resort: first visible actionable not in header
     return [...document.querySelectorAll("button,a,input,select,[role='button'],[data-label]")]
       .find(e => isVisible(e) && !HEADER_FILTER(e)) || null;
   }
 
   async function highlightAndPoint(el) {
+    // Remove previous outlines
     document.querySelectorAll("[data-fg-h]").forEach(x => { 
       x.classList.remove("fg-outline"); 
       x.removeAttribute("data-fg-h"); 
     });
     
-    if (!el) { 
-      cursor.style.display = "none"; 
-      cursor.style.opacity = "0"; 
-      return; 
-    }
+    if (!el) return;
     
+    // Scroll element into view
     el.scrollIntoView({ behavior: "smooth", block: "center" });
-    await new Promise(r => setTimeout(r, 300));
+    await new Promise(r => setTimeout(r, 400));
     
-    const r = el.getBoundingClientRect();
-    
-    // FIXED: For position:fixed, use viewport coordinates directly without scroll offset
-    cursor.style.left = (r.left + r.width / 2 - 30) + "px";
-    cursor.style.top  = (r.top  + r.height / 2 - 30) + "px";
-    
-    cursor.style.display = "flex"; 
-    cursor.style.opacity = "1";
-    
+    // Add blue outline wrapping
     el.classList.add("fg-outline"); 
     el.setAttribute("data-fg-h", "1");
     
+    // Auto-remove after 9 seconds
     setTimeout(() => { 
       el.classList.remove("fg-outline"); 
       el.removeAttribute("data-fg-h"); 
@@ -241,7 +220,6 @@
     }
   }
 
-  /* remove any leading "log in" step if already inside the app */
   function pruneTutorialIfLoggedIn() {
     const alreadyInside = !/\/login/i.test(location.pathname) && !document.querySelector("form[action*='login']");
     while (alreadyInside && tutorial.length && /log[\s-]?in/i.test(tutorial[0])) {
@@ -249,7 +227,6 @@
     }
   }
 
-  /* simple relevance scoring for cards */
   function scoreAtlas(atlas, job) {
     const jw = job.toLowerCase().split(/\s+/);
     return atlas.map(a => {
@@ -260,7 +237,6 @@
     }).sort((x, y) => y.score - x.score).slice(0, 8).map(x => x.a);
   }
 
-  /* cards > preview/guide */
   function showOpportunities(cards, job, industry) {
     $("#fg-setup").style.display = "none";
     $("#fg-opps").style.display = "block";
@@ -280,7 +256,6 @@
     }
   }
 
-  /* start quick demo */
   async function quickStart() {
     const job = $("#fg-job").value.trim() || "User";
     const industry = $("#fg-ind").value;
@@ -292,7 +267,6 @@
     startLesson(null);
   }
 
-  /* lesson */
   async function startLesson(feature) {
     $("#fg-setup").style.display = "none";
     $("#fg-opps").style.display = "none";
@@ -333,10 +307,13 @@
     document.removeEventListener("click", clickHandler, true);
     panel.classList.remove("fg-hidden"); tab.classList.add("fg-hidden");
     $("#fg-lesson").style.display = "none"; $("#fg-setup").style.display = "block";
-    cursor.style.opacity = 0; speak("Lesson ended.");
+    document.querySelectorAll("[data-fg-h]").forEach(x => { 
+      x.classList.remove("fg-outline"); 
+      x.removeAttribute("data-fg-h"); 
+    });
+    speak("Lesson ended.");
   }
 
-  /* ———  HUD / progress  ——— */
   function renderProgress() {
     if (!document.getElementById("fg-bar")) {
       const bar = Object.assign(document.createElement("div"), { className: "fg-progress", id: "fg-bar" });
@@ -347,7 +324,6 @@
     hud.querySelector("#fg-bar i").style.width = `${((stepIndex) / tutorial.length) * 100}%`;
   }
 
-  /* ———  options near (kept hidden unless user presses O)  ——— */
   function showOptionsNear(el) {
     const list = optionsBox.querySelector("#fg-opt-list"); list.innerHTML = "";
     if (!el) return;
@@ -363,7 +339,6 @@
     });
   }
 
-  /* ———  keyboard  ——— */
   document.addEventListener("keydown", e => {
     if (["N", "n"].includes(e.key)) { e.preventDefault(); if (stepIndex < tutorial.length - 1) { stepIndex++; displayStepAndPoint(stepIndex); } }
     if (["P", "p"].includes(e.key)) { e.preventDefault(); if (stepIndex > 0) { stepIndex--; displayStepAndPoint(stepIndex); } }
@@ -372,5 +347,5 @@
     if (["H", "h"].includes(e.key)) { e.preventDefault(); hud.classList.toggle("fg-hidden"); }
   });
 
-  console.log("✅ Frappe Demo Coach v3.1 loaded (cursor positioning FIXED)");
+  console.log("✅ Frappe Demo Coach v3.2 loaded (BLUE OUTLINE WRAPPING)");
 })();
