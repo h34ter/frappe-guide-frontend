@@ -1,12 +1,13 @@
-/* ────────── embed.js — Investor Coach v3.4 (robust matcher, fixed options panel) ────────── */
+/* ────────── embed.js — Investor Coach v3.5 (CLICK ADVANCE FIXED) ────────── */
 (() => {
   if (window.FG_INVESTOR_COACH) return;
   window.FG_INVESTOR_COACH = true;
 
   const API = "https://frappe-guide-backend.onrender.com";
   let tutorial = [], selectors = [], stepIndex = 0, chosenFeature = null;
+  let isHandlingClick = false; // prevent double-handling
 
-  /* ---------- CSS (cursor removed – blue outline only) ---------- */
+  /* ---------- CSS ---------- */
   const css = document.createElement("style");
   css.textContent = `
   .fg-panel{position:fixed;bottom:26px;right:26px;width:460px;background:#071024;border:1px solid rgba(59,130,246,.14);border-radius:12px;padding:16px;z-index:2147483646;color:#e6eef8;font-family:Inter,Arial;font-size:13px;box-shadow:0 10px 40px rgba(2,6,23,.6)}
@@ -30,13 +31,13 @@
   const panel = document.createElement("div");
   panel.className = "fg-panel";
   panel.innerHTML = `
-    <h3 style="margin:0 0 8px;color:#3B82F6">🤖 Frappe Demo Coach <span style="float:right;font-size:12px;font-weight:600;color:#9fb0c9">Investor</span></h3>
+    <h3 style="margin:0 0 8px;color:#3B82F6">🤖 Frappe Demo Coach <span style="float:right;font-size:12px;font-weight:600;color:#9fb0c9">Investor</span></h3>
     <div id="fg-setup">
       <input id="fg-job" placeholder="e.g., Procurement Manager">
       <select id="fg-ind"><option>Manufacturing</option><option>Retail</option><option>Services</option></select>
       <div style="display:flex;gap:8px;margin-top:6px">
         <button id="fg-analyze" style="flex:1">Discover</button>
-        <button id="fg-skip" style="flex:1;background:#071224;border:1px solid #183047">Quick Start</button>
+        <button id="fg-skip" style="flex:1;background:#071224;border:1px solid #183047">Quick Start</button>
       </div>
     </div>
     <div id="fg-opps" style="display:none">
@@ -56,7 +57,7 @@
   document.body.appendChild(panel);
 
   const hud = Object.assign(document.createElement("div"), { className: "fg-hud fg-hidden" });
-  hud.innerHTML = `<div class="fg-badge">LIVE DEMO</div><div id="fg-hud-txt">Idle</div>`;
+  hud.innerHTML = `<div class="fg-badge">LIVE DEMO</div><div id="fg-hud-txt">Idle</div>`;
   document.body.appendChild(hud);
 
   const optionsBox = Object.assign(document.createElement("div"), { className: "fg-options fg-hidden" });
@@ -105,7 +106,6 @@
       else if(label.startsWith(t)) push(e,70);
       else if(label.includes(t))  push(e,50);
     });
-    // deep search for text anywhere in DOM (for tiles/divs)
     if(t){
       [...document.querySelectorAll("body *")].filter(n=>n.children.length===0&&isVisible(n)&&!HEADER(n)).forEach(n=>{
         const lab=(n.innerText||"").trim().toLowerCase();
@@ -187,13 +187,40 @@
     if(!tutorial[i]) return;
     $("#fg-info").innerHTML=`<div class="fg-stepcard"><strong>Step ${i+1}/${tutorial.length}</strong><div style="margin-top:8px">${tutorial[i]}</div></div>`;
     progress();
-    const cands=findCandidates(selectors[i],tutorial[i]); highlight(cands[0]?.el); showOpts(cands); say(tutorial[i]);
+    const cands=findCandidates(selectors[i],tutorial[i]); 
+    highlight(cands[0]?.el); 
+    showOpts(cands); 
+    say(tutorial[i]);
   }
 
-  const handler = e=>{
-    const c=findCandidates(selectors[stepIndex],tutorial[stepIndex])[0];
-    if(c&& (c.el===e.target||c.el.contains(e.target)) ){ if(++stepIndex>=tutorial.length){ say("Demo complete."); stopLesson(); } else step(stepIndex); }
-    else { say("Click the highlighted element."); highlight(c?.el); showOpts(findCandidates(selectors[stepIndex],tutorial[stepIndex])); }
+  const handler = async (e) => {
+    if (isHandlingClick) return; // prevent re-entry
+    
+    const cands = findCandidates(selectors[stepIndex], tutorial[stepIndex]);
+    const target = cands[0]?.el;
+    
+    if (target && (target === e.target || target.contains(e.target))) {
+      isHandlingClick = true;
+      
+      // ADVANCE STEP
+      stepIndex++;
+      
+      if (stepIndex >= tutorial.length) {
+        say("Demo complete.");
+        stopLesson();
+      } else {
+        // Wait for page to potentially change
+        await new Promise(r => setTimeout(r, 800));
+        step(stepIndex);
+      }
+      
+      isHandlingClick = false;
+    } else {
+      // Wrong click - re-highlight
+      say("Click the highlighted element.");
+      highlight(target);
+      showOpts(cands);
+    }
   };
 
   function stopLesson(){
@@ -210,12 +237,12 @@
   }
 
   document.addEventListener("keydown",e=>{
-    if(["N","n"].includes(e.key)&&stepIndex<tutorial.length-1){e.preventDefault();step(++stepIndex);}
-    if(["P","p"].includes(e.key)&&stepIndex>0){e.preventDefault();step(--stepIndex);}
+    if(["N","n"].includes(e.key)&&stepIndex<tutorial.length-1){e.preventDefault();stepIndex++;step(stepIndex);}
+    if(["P","p"].includes(e.key)&&stepIndex>0){e.preventDefault();stepIndex--;step(stepIndex);}
     if(["R","r"," "].includes(e.key)){e.preventDefault();say(tutorial[stepIndex]);}
     if(["O","o"].includes(e.key)){e.preventDefault();optionsBox.classList.toggle("fg-hidden");}
     if(["H","h"].includes(e.key)){e.preventDefault();hud.classList.toggle("fg-hidden");}
   });
 
-  console.log("✅ Frappe Demo Coach v3.4 loaded — blue outline, robust matcher, fixed options panel");
+  console.log("✅ Frappe Demo Coach v3.5 loaded — CLICK ADVANCE FIXED");
 })();
