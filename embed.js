@@ -1,86 +1,139 @@
-/* embed.js — fixes stuck cursor by ignoring header/logo and preferring main-content actionable elements */
+/* ─── embed.js — Fixed: voice + cursor robust + user-gesture TTS unlock ─── */
 (function(){
-  if (window.FG_CURSOR_FIXED) return;
-  window.FG_CURSOR_FIXED = true;
+  if (window.FG_INVESTOR_COACH_V2) {
+    console.warn('FG_INVESTOR_COACH_V2 already loaded');
+    return;
+  }
+  window.FG_INVESTOR_COACH_V2 = true;
 
   const API = "https://frappe-guide-backend.onrender.com";
-  let tutorial = [], selectors = [], stepIndex = 0;
+  let tutorial = [], selectors = [], stepIndex = 0, atlas = [], chosenFeatureForLesson = null;
+  let recording = false, recordEvents = [];
 
-  /* styles (kept minimal) */
-  const s = document.createElement('style');
-  s.textContent = `
+  /* ================= STYLES ================= */
+  const css = document.createElement('style');
+  css.textContent = `
   .fg-cursor{position:fixed;width:60px;height:60px;border:4px solid #3B82F6;border-radius:50%;
-    background:rgba(59,130,246,0.18);box-shadow:0 0 40px rgba(59,130,246,0.9);z-index:2147483647;display:none;align-items:center;justify-content:center;font-size:28px;pointer-events:none;transition:left .35s cubic-bezier(.2,.9,.2,1),top .35s cubic-bezier(.2,.9,.2,1),opacity .12s}
-  .fg-outline{outline:4px solid #3B82F6!important;outline-offset:4px!important;border-radius:6px}
-  .fg-panel{position:fixed;bottom:30px;right:30px;width:420px;background:#0f172a;border:2px solid #3B82F6;border-radius:10px;padding:16px;z-index:2147483646;color:#f3f4f6;font-family:Arial;font-size:13px}
-  .fg-stepcard{padding:10px;background:rgba(59,130,246,0.06);border-left:3px solid #3B82F6;margin-top:10px;border-radius:6px}
+    background:linear-gradient(180deg, rgba(59,130,246,.18), rgba(59,130,246,.08));box-shadow:0 8px 30px rgba(59,130,246,.25);
+    z-index:2147483647;display:none;align-items:center;justify-content:center;font-size:28px;pointer-events:none;transition:left .35s ease,top .35s ease,opacity .2s}
+  .fg-panel{position:fixed;bottom:26px;right:26px;width:460px;background:#071024;border:1px solid rgba(59,130,246,.14);
+    border-radius:12px;padding:16px;z-index:2147483646;color:#e6eef8;font-family:Inter,Arial;font-size:13px;box-shadow:0 10px 40px rgba(2,6,23,.6)}
+  .fg-panel input,.fg-panel select{width:100%;padding:9px;margin:8px 0;border:1px solid #1f2a38;background:#071224;color:#e6eef8;border-radius:8px}
+  .fg-panel button{padding:10px;background:#3B82F6;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700}
+  .fg-small{font-size:12px;color:#9fb0c9}
+  .fg-stepcard{padding:10px;background:linear-gradient(90deg, rgba(59,130,246,.04), rgba(59,130,246,.02));border-left:4px solid #3B82F6;margin-top:10px;border-radius:6px}
+  .fg-outline{outline:4px solid #3B82F6 !important; outline-offset:4px !important; border-radius:6px}
+  .fg-hidden{display:none !important}
+  .fg-hud{position:fixed;left:16px;top:12px;background:rgba(2,6,23,.7);color:#cfe8ff;padding:8px 12px;border-radius:8px;border:1px solid rgba(59,130,246,.12);z-index:2147483655;font-family:Inter,Arial;font-size:13px;display:flex;gap:10px;align-items:center}
+  .fg-badge{background:#072033;padding:6px 8px;border-radius:6px;border:1px solid #183047;color:#9fd0ff;font-weight:700}
+  .fg-tab{position:fixed;top:42%;right:6px;width:46px;height:130px;background:#071224;border:1px solid #1f2a38;border-radius:10px;
+    display:flex;align-items:center;justify-content:center;writing-mode:vertical-rl;text-orientation:mixed;color:#9fb0c9;z-index:2147483650;cursor:pointer;box-shadow:0 8px 20px rgba(2,6,23,.5)}
+  .fg-options{position:fixed;right:500px;bottom:26px;background:#071327;border:1px solid rgba(59,130,246,.06);padding:10px;border-radius:8px;z-index:2147483650;max-height:320px;overflow:auto;width:360px;color:#cfe8ff}
   `;
-  document.head.appendChild(s);
+  document.head.appendChild(css);
 
-  /* cursor */
-  const cursor = document.createElement('div');
-  cursor.className = 'fg-cursor';
-  cursor.textContent = '●';
-  cursor.style.opacity = '0';
-  document.body.appendChild(cursor);
+  /* ================= CORE DOM ================= */
+  const cursor = document.createElement('div'); cursor.className = 'fg-cursor'; cursor.textContent = '●'; cursor.style.opacity='0'; document.body.appendChild(cursor);
 
-  /* simple panel */
-  const panel = document.createElement('div');
-  panel.className = 'fg-panel';
-  panel.innerHTML = `<h3 style="margin:0 0 8px;color:#3B82F6">🤖 Frappe Coach</h3>
-    <input id="fg-job" placeholder="Job title (e.g., Procurement Manager)" style="width:100%;padding:8px;margin-bottom:8px;border-radius:6px;border:1px solid #334155;background:#0b1220;color:#f3f4f6" />
-    <select id="fg-ind" style="width:100%;padding:8px;margin-bottom:8px;border-radius:6px;border:1px solid #334155;background:#0b1220;color:#f3f4f6"><option>Manufacturing</option><option>Retail</option><option>Services</option></select>
-    <div style="display:flex;gap:8px"><button id="fg-analyze" style="flex:1">Discover</button><button id="fg-quick" style="flex:1;background:#0b1220;border:1px solid #334155">Quick</button></div>
-    <div id="fg-info" style="margin-top:10px"></div>`;
+  const panel = document.createElement('div'); panel.className = 'fg-panel'; panel.id='fg-panel-main';
+  panel.innerHTML = `
+    <h3 style="margin:0 0 8px;color:#3B82F6">🤖 Frappe Demo Coach <span class="fg-small" style="float:right;font-weight:600;color:#9fb0c9">Investor Mode</span></h3>
+    <div id="fg-setup">
+      <p class="fg-small" style="margin:0 0 8px">Enter a job and we'll show high-impact Frappe features tailored to that role.</p>
+      <input id="fg-job" placeholder="e.g., Procurement Manager" />
+      <select id="fg-ind"><option>Manufacturing</option><option>Retail</option><option>Services</option></select>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button id="fg-analyze" style="flex:1">Discover Opportunities</button>
+        <button id="fg-voice-enable" style="flex:1;background:#071224;border:1px solid #183047">Enable Voice</button>
+      </div>
+      <div class="fg-small" style="margin-top:8px">Shortcuts: N=Next · P=Prev · R=Repeat · Space=Repeat</div>
+    </div>
+
+    <div id="fg-opps" style="display:none">
+      <div class="fg-small">Top possibilities for your role</div>
+      <div id="fg-cards" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px"></div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button id="fg-start-lesson" style="flex:1">Start Guided Demo</button>
+        <button id="fg-back" style="flex:1;background:#071224;border:1px solid #183047">Back</button>
+      </div>
+    </div>
+
+    <div id="fg-lesson" style="display:none">
+      <div id="fg-info"></div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button id="fg-repeat" style="flex:1">Repeat</button>
+        <button id="fg-stop" style="flex:1;background:#ef4444">Stop</button>
+      </div>
+    </div>
+  `;
   document.body.appendChild(panel);
 
-  document.getElementById('fg-analyze').onclick = runDiscovery;
-  document.getElementById('fg-quick').onclick = quickStart;
+  const hud = document.createElement('div'); hud.className = 'fg-hud'; hud.innerHTML = `<div class="fg-badge">LIVE DEMO</div><div id="fg-hud-txt" style="min-width:160px">Not running</div><div id="fg-record-ind" title="Recording status" style="color:#4b5563">●</div>`; document.body.appendChild(hud);
+  const tab = document.createElement('div'); tab.className='fg-tab fg-hidden'; tab.id='fg-tab'; tab.textContent='Demo'; document.body.appendChild(tab);
+  const optionsBox = document.createElement('div'); optionsBox.className='fg-options fg-hidden'; optionsBox.id='fg-options'; optionsBox.innerHTML = `<h4>Options near highlighted</h4><div id="fg-options-list"></div>`; document.body.appendChild(optionsBox);
 
-  /* --- BLACKLIST / PREFERENCES --- */
-  // CSS selectors (elements matching these will be ignored as targets)
-  const IGNORE_SELECTOR_MATCH = [
-    'header', '.navbar', '.topbar', '.site-header', '.brand', '.logo', '.app-logo', '.erpnext-sidebar', '.sidebar', '.page-head', '.page-header'
-  ];
+  /* ================= BIND ELEMENTS ================= */
+  const analyzeBtn = panel.querySelector('#fg-analyze');
+  const voiceEnableBtn = panel.querySelector('#fg-voice-enable');
+  const backBtn = panel.querySelector('#fg-back');
+  const startLessonBtn = panel.querySelector('#fg-start-lesson');
+  const repeatBtn = panel.querySelector('#fg-repeat');
+  const stopBtn = panel.querySelector('#fg-stop');
+  const infoEl = panel.querySelector('#fg-info');
+  const cardsEl = panel.querySelector('#fg-cards');
 
-  // ancestor class patterns to ignore if found in element's ancestors
-  const IGNORE_ANCESTOR_HINTS = ['logo', 'brand', 'header', 'navbar', 'topbar', 'app-header', 'page-head', 'site-header'];
+  analyzeBtn.onclick = runDiscovery;
+  voiceEnableBtn.onclick = enableVoiceGesture;
+  backBtn.onclick = ()=>{ panel.querySelector('#fg-opps').style.display='none'; panel.querySelector('#fg-setup').style.display='block'; };
+  startLessonBtn.onclick = ()=> startLesson(chosenFeatureForLesson);
+  repeatBtn.onclick = ()=> speakStep(stepIndex);
+  stopBtn.onclick = stopLesson;
+  tab.onclick = ()=>{ panel.classList.remove('fg-hidden'); tab.classList.add('fg-hidden'); };
 
-  // minimal visible size (px) to consider element meaningful
-  const MIN_WIDTH = 28;
-  const MIN_HEIGHT = 10;
+  /* ================= TTS: robust wrapper (returns Promise) ================= */
+  // ensure speak is defined before any callers
+  function supportsSpeechSynthesis(){ return typeof window !== 'undefined' && 'speechSynthesis' in window && typeof SpeechSynthesisUtterance === 'function'; }
 
-  /* UTIL: is element inside a blacklisted ancestor? */
-  function hasIgnoredAncestor(el){
+  let _lastUtterance = null;
+  function cancelSpeech(){ try { if (supportsSpeechSynthesis()) window.speechSynthesis.cancel(); } catch(e){} }
+
+  async function speak(text){
+    if (!text) return Promise.resolve();
     try {
-      let p = el;
-      while (p && p !== document.body){
-        const cls = (p.className || '') + '';
-        if (typeof cls === 'string'){
-          for (const hint of IGNORE_ANCESTOR_HINTS){
-            if (cls.toLowerCase().includes(hint)) return true;
-          }
-        }
-        const tag = (p.tagName || '').toLowerCase();
-        if (IGNORE_SELECTOR_MATCH.includes(tag)) return true;
-        p = p.parentElement;
+      // if browser TTS available, use it
+      if (supportsSpeechSynthesis()){
+        cancelSpeech();
+        return new Promise(resolve => {
+          try {
+            const u = new SpeechSynthesisUtterance(text);
+            u.lang = 'en-US';
+            u.onend = ()=>{ _lastUtterance = null; resolve(); };
+            u.onerror = (ev)=>{ console.warn('TTS error', ev); _lastUtterance = null; resolve(); };
+            _lastUtterance = u;
+            window.speechSynthesis.speak(u);
+          } catch (e) { console.warn('TTS speak failed', e); resolve(); }
+        });
+      } else {
+        // no speechSynthesis - just return immediately (could add remote TTS later)
+        console.debug('TTS not supported in this browser');
+        return Promise.resolve();
       }
-    } catch(e){}
-    return false;
+    } catch(e){
+      console.error('speak wrapper error', e); return Promise.resolve();
+    }
   }
 
-  /* UTIL: is element too small / invisible / outside viewport? */
-  function isMeaningfulVisible(el){
-    if (!el) return false;
-    const style = window.getComputedStyle(el);
-    if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity) === 0) return false;
-    const rect = el.getBoundingClientRect();
-    if (rect.width < MIN_WIDTH || rect.height < MIN_HEIGHT) return false;
-    if (rect.bottom < 0 || rect.top > (window.innerHeight || document.documentElement.clientHeight)) return false;
-    return true;
+  async function enableVoiceGesture(){
+    // some browsers require user gesture to allow audio; play a short silent utterance and a short beep text
+    try {
+      await speak('Voice enabled.'); // user gesture unlocks
+      voiceEnableBtn.textContent = 'Voice Enabled';
+      voiceEnableBtn.disabled = true;
+      hud.querySelector('#fg-hud-txt').textContent = 'Voice enabled';
+    } catch(e){ console.warn('enableVoiceGesture failed', e); alert('Voice enable failed. Use browser settings.'); }
   }
 
-  /* UTIL: is element actionable? */
+  /* ================= Actionable detection & cursor ================= */
   function isActionable(el){
     if(!el || !el.tagName) return false;
     const tag = el.tagName.toLowerCase();
@@ -90,238 +143,300 @@
     if (el.hasAttribute && el.hasAttribute('data-label')) return true;
     const cls = (el.className || '') + '';
     if (/\b(btn|btn-primary|action|link)\b/.test(cls)) return true;
-    try {
-      if (typeof el.onclick === 'function') return true;
-      if (el.getAttribute && el.getAttribute('onclick')) return true;
-    } catch(e){}
+    try { if (typeof el.onclick === 'function') return true; if (el.getAttribute && el.getAttribute('onclick')) return true; } catch(e){}
     return false;
-  }
-
-  /* find element: improved logic */
-  function findElement(selector, textFallback){
-    console.debug('findElement called selector=', selector, 'textFallback=', textFallback && textFallback.slice(0,60));
-    // 1) try selector(s) but filter out header/logo ancestors and tiny elements
-    if (selector){
-      const parts = selector.split(',').map(s=>s.trim()).filter(Boolean);
-      for (const p of parts){
-        try {
-          const el = document.querySelector(p);
-          if (el && isMeaningfulVisible(el) && !hasIgnoredAncestor(el) && isActionable(el)) { console.debug('matched selector', p, el); return el; }
-          // if selected element is not actionable, try nearest actionable inside it
-          if (el && isMeaningfulVisible(el) && !hasIgnoredAncestor(el)){
-            const near = findNearestActionable(el);
-            if (near) { console.debug('near match inside selector', p, near); return near; }
-          }
-        } catch(e){ /* invalid selector, ignore */ }
-      }
-    }
-
-    // 2) try high-quality text matches: exact or whole-word matches in visible actionable pool, prefer elements inside main content region
-    const poolSelectors = 'button, a, input, select, [role="button"], [data-label], .btn, .btn-primary';
-    const pool = Array.from(document.querySelectorAll(poolSelectors)).filter(e=>isMeaningfulVisible(e) && !hasIgnoredAncestor(e));
-    const text = (textFallback||'').trim();
-    if (text){
-      const normalized = text.toLowerCase().replace(/\s+/g,' ').trim();
-      // prefer exact text equals for buttons/labels
-      for (const el of pool){
-        const label = ((el.innerText || el.getAttribute('placeholder') || el.getAttribute('aria-label') || el.getAttribute('data-label') || '')+'').trim().replace(/\s+/g,' ').toLowerCase();
-        if (!label) continue;
-        // exact or startsWith or whole word boundary
-        if (label === normalized || label.startsWith(normalized) || new RegExp('\\b' + escapeRegex(normalized) + '\\b').test(label)){
-          console.debug('text exact match', label, el);
-          return el;
-        }
-      }
-      // second pass: includes match but prefer ones inside main content (below header offset)
-      const headerThreshold = Math.max(64, getHeaderHeight());
-      const candidates = pool.filter(el => {
-        const r = el.getBoundingClientRect();
-        if ((r.top + r.bottom)/2 < headerThreshold) return false; // above threshold => likely header/logo
-        return true;
-      });
-      for (const el of candidates){
-        const label = ((el.innerText || el.getAttribute('placeholder') || el.getAttribute('aria-label') || el.getAttribute('data-label') || '')+'').trim().replace(/\s+/g,' ').toLowerCase();
-        if (!label) continue;
-        if (label.includes(normalized) || normalized.includes(label)) {
-          console.debug('text includes match (main area)', label, el);
-          return el;
-        }
-      }
-    }
-
-    // 3) try searching by larger DOM text nodes (not header), find nearest actionable
-    if (text){
-      const normalized = text.toLowerCase().split(/\s+/).slice(0,5).join(' ');
-      const all = Array.from(document.querySelectorAll('body *')).filter(n => {
-        if (n.children && n.children.length) return false;
-        if (!isMeaningfulVisible(n)) return false;
-        if (hasIgnoredAncestor(n)) return false;
-        return true;
-      });
-      // rank by textual match length and being below header threshold
-      let best = null; let bestScore = 0;
-      const headerThreshold = Math.max(64, getHeaderHeight());
-      for (const n of all){
-        const t = (n.innerText||'').trim().replace(/\s+/g,' ').toLowerCase();
-        if (!t) continue;
-        let score = 0;
-        if (t.includes(normalized)) score += 5;
-        if (normalized.includes(t)) score += 3;
-        // penalize things in header area
-        const r = n.getBoundingClientRect();
-        if ((r.top + r.bottom)/2 < headerThreshold) score -= 4;
-        if (score <= 0) continue;
-        // try to find nearest actionable inside/near n
-        const near = findNearestActionable(n);
-        if (near && isMeaningfulVisible(near) && !hasIgnoredAncestor(near)){
-          score += 2;
-          if (score > bestScore){ bestScore = score; best = near; }
-        }
-      }
-      if (best){ console.debug('found best by DOM text search', best); return best; }
-    }
-
-    // 4) fallback: first visible actionable not in header
-    const allClickable = Array.from(document.querySelectorAll('button, a, input, select, [role="button"], [data-label], .btn, .btn-primary')).filter(e => isMeaningfulVisible(e) && !hasIgnoredAncestor(e));
-    if (allClickable.length) { console.debug('fallback clickable', allClickable[0]); return allClickable[0]; }
-
-    // 5) if nothing, allow header buttons (last resort)
-    const fallbackAll = Array.from(document.querySelectorAll('button, a')).filter(e => isMeaningfulVisible(e));
-    if (fallbackAll.length) return fallbackAll[0];
-    return null;
-  }
-
-  function escapeRegex(s){ return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'); }
-
-  function getHeaderHeight(){
-    // try common header selectors to compute a threshold for "above header" elements
-    const candidates = Array.from(document.querySelectorAll('header, .navbar, .topbar, .page-head, .site-header'));
-    if (candidates.length){
-      let max = 0;
-      for (const c of candidates){
-        try { const r = c.getBoundingClientRect(); if (r.height > max) max = r.height; } catch(e){}
-      }
-      if (max > 0) return max + 16;
-    }
-    // fallback typical header
-    return 80;
   }
 
   function findNearestActionable(startEl){
     if (!startEl) return null;
-    if (isActionable(startEl) && isMeaningfulVisible(startEl) && !hasIgnoredAncestor(startEl)) return startEl;
-    // search children first
+    if (isActionable(startEl) && startEl.offsetParent !== null) return startEl;
     try {
       const child = startEl.querySelector && startEl.querySelector('button, a, input, select, [role="button"], [data-label], .btn, .btn-primary');
-      if (child && isMeaningfulVisible(child) && !hasIgnoredAncestor(child)) return child;
+      if (child && child.offsetParent !== null) return child;
     } catch(e){}
-    // search siblings and parent
-    let p = startEl.parentElement;
-    let depth = 0;
+    let p = startEl.parentElement, depth = 0;
     while (p && depth < 4){
       try {
-        const candidate = p.querySelector && p.querySelector('button, a, input, select, [role="button"], [data-label], .btn, .btn-primary');
-        if (candidate && isMeaningfulVisible(candidate) && !hasIgnoredAncestor(candidate)) return candidate;
+        const cand = p.querySelector && p.querySelector('button, a, input, select, [role="button"], [data-label], .btn, .btn-primary');
+        if (cand && cand.offsetParent !== null) return cand;
       } catch(e){}
       p = p.parentElement; depth++;
     }
-    // as last resort, search global pool but avoid header
-    const pool = Array.from(document.querySelectorAll('button, a, input, select, [role="button"], [data-label], .btn, .btn-primary')).filter(e=>isMeaningfulVisible(e) && !hasIgnoredAncestor(e));
-    if (pool.length) {
-      // choose the one with bounding rect closest to startEl's rect center if available
-      try {
-        const ref = startEl.getBoundingClientRect();
-        let best = pool[0], bestD = Infinity;
-        for (const c of pool){
-          const r = c.getBoundingClientRect();
-          const d = Math.hypot((r.left + r.width/2) - (ref.left + ref.width/2), (r.top + r.height/2) - (ref.top + ref.height/2));
-          if (d < bestD){ bestD = d; best = c; }
+    const pool = Array.from(document.querySelectorAll('button, a, input, select, [role="button"], [data-label], .btn, .btn-primary')).filter(x=>x.offsetParent !== null);
+    return pool[0] || null;
+  }
+
+  function findElement(selector, textFallback){
+    try {
+      if (selector){
+        const parts = selector.split(',').map(s=>s.trim()).filter(Boolean);
+        for (const p of parts){
+          try {
+            const el = document.querySelector(p);
+            if (el && el.offsetParent !== null){
+              if (isActionable(el)) return el;
+              const near = findNearestActionable(el); if (near) return near;
+            }
+          } catch(e){}
         }
-        return best;
-      } catch(e){}
-      return pool[0];
-    }
-    return null;
+      }
+      const pool = Array.from(document.querySelectorAll('button, a, input, select, [role="button"], [data-label], .btn, .btn-primary')).filter(e=>e.offsetParent !== null);
+      const lower = (textFallback||'').trim().toLowerCase();
+      if (lower){
+        // prefer exact or prefix matches
+        for (const el of pool){
+          const label = ((el.innerText||el.getAttribute('placeholder')||el.getAttribute('aria-label')||el.getAttribute('data-label')||'')+'').trim().replace(/\s+/g,' ').toLowerCase();
+          if (!label) continue;
+          if (label === lower || label.startsWith(lower) || new RegExp('\\b'+escapeRegex(lower)+'\\b').test(label)) return el;
+        }
+        // second pass: includes
+        for (const el of pool){
+          const label = ((el.innerText||'')+'').trim().toLowerCase();
+          if (label.includes(lower)) return el;
+        }
+      }
+      // fallback: nearest clickable in viewport
+      return pool[0] || null;
+    } catch(e){ console.error('findElement error', e); return null; }
   }
 
-  /* highlight + point */
+  function escapeRegex(s){ return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'); }
+
   async function highlightAndPoint(el){
-    document.querySelectorAll('[data-fg-highlight]').forEach(x=>{
-      x.classList.remove('fg-outline');
-      x.removeAttribute('data-fg-highlight');
-    });
-    if (!el){ cursor.style.display='none'; cursor.style.opacity='0'; return; }
-    // ensure el actionable
-    if (!isActionable(el)){
-      const near = findNearestActionable(el);
-      if (near) el = near;
-    }
-    if (!el){ cursor.style.display='none'; cursor.style.opacity='0'; return; }
-    // scroll to center but ensure not to center header/logo
-    try { el.scrollIntoView({behavior:'smooth', block:'center', inline:'center'}); await waitForScrollToFinish(el); } catch(e){}
-    await new Promise(r=>setTimeout(r,120));
-    const rect = el.getBoundingClientRect();
-    const left = rect.left + rect.width/2 - 30 + window.scrollX;
-    const top  = rect.top + rect.height/2 - 30 + window.scrollY;
-    cursor.style.display='flex';
-    cursor.style.left = left + 'px';
-    cursor.style.top = top + 'px';
-    cursor.style.opacity = '1';
-    el.classList.add('fg-outline'); el.setAttribute('data-fg-highlight','true');
-    setTimeout(()=>{ try{ if (el && el.getAttribute && el.getAttribute('data-fg-highlight')){ el.classList.remove('fg-outline'); el.removeAttribute('data-fg-highlight'); } }catch(e){} }, 8000);
+    try {
+      document.querySelectorAll('[data-fg-highlight]').forEach(x=>{ x.classList.remove('fg-outline'); x.removeAttribute('data-fg-highlight'); });
+      if (!el){ cursor.style.display='none'; cursor.style.opacity='0'; return; }
+      if (!isActionable(el)){
+        const near = findNearestActionable(el); if (near) el = near;
+      }
+      if (!el){ cursor.style.display='none'; cursor.style.opacity='0'; return; }
+      try { el.scrollIntoView({ behavior: 'smooth', block:'center', inline:'center' }); await waitForScrollToFinish(el); } catch(e){}
+      await new Promise(r=>setTimeout(r,120));
+      const rect = el.getBoundingClientRect();
+      const left = rect.left + rect.width/2 - 30 + window.scrollX;
+      const top  = rect.top + rect.height/2 - 30 + window.scrollY;
+      cursor.style.display='flex'; cursor.style.left = left + 'px'; cursor.style.top = top + 'px'; cursor.style.opacity='1';
+      el.classList.add('fg-outline'); el.setAttribute('data-fg-highlight','true');
+      setTimeout(()=>{ try{ if (el && el.getAttribute && el.getAttribute('data-fg-highlight')){ el.classList.remove('fg-outline'); el.removeAttribute('data-fg-highlight'); } }catch(e){} }, 9000);
+    } catch(err){ console.error('highlightAndPoint failed', err); cursor.style.opacity='0'; }
   }
 
-  function waitForScrollToFinish(targetEl, timeout = 900){
-    return new Promise(resolve => {
+  function waitForScrollToFinish(targetEl, timeout=900){
+    return new Promise(resolve=>{
       const start = Date.now();
-      const tick = ()=>{
+      const check = ()=>{
         try {
           const rect = targetEl.getBoundingClientRect();
-          const centerY = window.innerHeight/2;
-          const centerX = window.innerWidth/2;
-          const dy = Math.abs((rect.top + rect.bottom)/2 - centerY);
-          const dx = Math.abs((rect.left + rect.right)/2 - centerX);
+          const centerY = window.innerHeight/2, centerX = window.innerWidth/2;
+          const dy = Math.abs((rect.top+rect.bottom)/2 - centerY);
+          const dx = Math.abs((rect.left+rect.right)/2 - centerX);
           if (dy < 30 && dx < 40) return resolve();
         } catch(e){}
         if (Date.now() - start > timeout) return resolve();
-        requestAnimationFrame(tick);
+        requestAnimationFrame(check);
       };
-      requestAnimationFrame(tick);
+      requestAnimationFrame(check);
     });
   }
 
-  /* --- flow: analyze-job -> show first step and point --- */
+  /* ================= Flow: discovery & lesson ================= */
   async function runDiscovery(){
     const job = document.getElementById('fg-job').value.trim();
-    const ind = document.getElementById('fg-ind').value;
-    if (!job) return alert('Enter job');
-    document.getElementById('fg-info').innerHTML = '<div class="fg-stepcard">Analyzing...</div>';
+    const industry = document.getElementById('fg-ind').value;
+    if (!job) return alert('Enter job title');
+    analyzeBtn.disabled = true; analyzeBtn.textContent = 'Analyzing...';
+    hud.querySelector('#fg-hud-txt').textContent = `Analyzing — ${job}`;
     try {
-      const r = await fetch(API + '/analyze-job', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ job, industry: ind }) });
+      const r = await fetch(API + '/analyze-job', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ job, industry }) });
       if (!r.ok) throw new Error('analyze-job failed ' + r.status);
       const data = await r.json();
-      tutorial = data.tutorial || [];
-      selectors = data.selectors || [];
-      stepIndex = 0;
-      document.getElementById('fg-info').innerHTML = `<div class="fg-stepcard"><strong>Step 1/${tutorial.length}</strong><div style="margin-top:8px">${tutorial[0]||'—'}</div></div>`;
-      // find & point first
-      const el = findElement(selectors[0] || '', tutorial[0] || '');
-      console.debug('element chosen for step0', el);
-      await highlightAndPoint(el);
-    } catch (err){
-      console.error('Discovery error', err);
-      document.getElementById('fg-info').innerHTML = `<div class="fg-stepcard" style="border-left-color:#ef4444"><strong>Error</strong><div style="margin-top:8px">${String(err)}</div></div>`;
+      tutorial = data.tutorial || []; selectors = data.selectors || [];
+      // fetch atlas
+      const at = await fetch(API + '/atlas'); atlas = await at.json();
+      const cards = scoreAtlasForRole(atlas, job, tutorial);
+      showOpportunities(cards, job, industry);
+      analyzeBtn.disabled = false; analyzeBtn.textContent = 'Discover Opportunities';
+      hud.querySelector('#fg-hud-txt').textContent = `Ready — ${job}`;
+    } catch(e){
+      console.error('Discovery error', e);
+      analyzeBtn.disabled = false; analyzeBtn.textContent = 'Discover Opportunities';
+      hud.querySelector('#fg-hud-txt').textContent = 'Error';
+      infoEl.innerHTML = `<div class="fg-stepcard" style="border-left-color:#ef4444"><strong>Backend error</strong><div style="margin-top:8px">${String(e)}</div></div>`;
     }
   }
 
-  async function quickStart(){
-    // call analyze with a default
-    document.getElementById('fg-job').value = document.getElementById('fg-job').value || 'Procurement Manager';
-    await runDiscovery();
+  function scoreAtlasForRole(atlas, job, tutorial){
+    const keywords = (tutorial||[]).map(t => (t||'').split(/\s+/).slice(-1)[0] || '').filter(Boolean);
+    const jobWords = job.split(/\s+/).map(s=>s.toLowerCase());
+    const scored = (atlas||[]).map(a => {
+      const label = (a.label||'').toLowerCase();
+      let score = 0;
+      for (const w of keywords) if (label.includes((w||'').toLowerCase())) score += 3;
+      for (const w of jobWords) if (label.includes(w)) score += 2;
+      if ((a.module||'').toLowerCase().includes(job.toLowerCase())) score += 2;
+      return {a, score};
+    }).filter(x=>x.score>0).sort((x,y)=>y.score-x.score).map(x=>x.a);
+    const seen = new Set(); const related = [];
+    for (const item of scored){ const key=(item.label||item.name||'').toLowerCase(); if (!key) continue; if (seen.has(key)) continue; seen.add(key); related.push(item); if (related.length>=8) break; }
+    return related.length?related: (atlas || []).slice(0,8);
   }
 
-  /* expose for debug */
-  window.FG_FIND = { findElement, highlightAndPoint, hasIgnoredAncestor, isMeaningfulVisible };
+  function showOpportunities(cards, job, industry){
+    panel.querySelector('#fg-setup').style.display='none';
+    panel.querySelector('#fg-opps').style.display='block';
+    cardsEl.innerHTML=''; chosenFeatureForLesson = null;
+    for (const c of cards){
+      const card = document.createElement('div'); card.style.background='#071327'; card.style.padding='10px'; card.style.borderRadius='8px';
+      card.style.border = '1px solid rgba(59,130,246,.06)'; card.style.display='flex'; card.style.flexDirection='column'; card.style.justifyContent='space-between';
+      const title = document.createElement('div'); title.textContent = c.label || c.name || '(no label)'; title.style.fontWeight='700';
+      const meta = document.createElement('div'); meta.textContent = (c.module ? c.module + ' · ' : '') + (c.route||''); meta.style.color='#9fb0c9'; meta.style.fontSize='12px';
+      const actions = document.createElement('div'); actions.style.display='flex'; actions.style.gap='8px'; actions.style.marginTop='8px';
+      const preview = document.createElement('button'); preview.textContent='Preview'; const guide = document.createElement('button'); guide.textContent='Guide me'; guide.style.background='#071224'; guide.style.border='1px solid #183047';
+      actions.appendChild(preview); actions.appendChild(guide);
+      card.appendChild(title); card.appendChild(meta); card.appendChild(actions);
+      cardsEl.appendChild(card);
 
-  console.log('✅ embed (cursor fixes) loaded — findElement will avoid header/logo. Use Discover.');
+      preview.onclick = async () => {
+        const pitch = `${c.label || c.name} (${c.module}). Quick win: capture data, speed approvals, reduce errors.`;
+        await speak(pitch);
+        const elCandidate = findElement(null, c.label || c.name);
+        if (elCandidate) { await highlightAndPoint(elCandidate); showOptionsNear(elCandidate); }
+        else infoEl.innerHTML = `<div class="fg-stepcard"><strong>Preview:</strong><div style="margin-top:6px">${pitch}</div></div>`;
+      };
+      guide.onclick = () => { chosenFeatureForLesson = { label: c.label, route: c.route }; panel.querySelector('#fg-opps').style.display='none'; startLesson(chosenFeatureForLesson); };
+    }
+    // quick elevator
+    if (cards && cards.length) speak(`Top suggestion: ${cards[0].label || cards[0].name}`);
+  }
+
+  async function quickStart(){
+    const job = document.getElementById('fg-job').value.trim() || 'User';
+    const industry = document.getElementById('fg-ind').value;
+    analyzeBtn.disabled=true; analyzeBtn.textContent='Preparing...';
+    try {
+      const r = await fetch(API + '/analyze-job', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ job, industry }) });
+      const data = await r.json();
+      tutorial = data.tutorial || []; selectors = data.selectors || [];
+      panel.querySelector('#fg-setup').style.display='none'; panel.querySelector('#fg-opps').style.display='none'; panel.querySelector('#fg-lesson').style.display='block';
+      stepIndex=0; document.addEventListener('click', onClickHandler, true);
+      await speak(`Starting quick demo for ${job}.`);
+      await displayStepAndPoint(0);
+    } catch(e){ console.error(e); alert('Quick start failed'); }
+    finally { analyzeBtn.disabled=false; analyzeBtn.textContent='Discover Opportunities'; }
+  }
+
+  async function startLesson(feature){
+    if (!tutorial || tutorial.length===0){
+      const job = document.getElementById('fg-job').value.trim() || 'User'; const industry = document.getElementById('fg-ind').value;
+      const r = await fetch(API + '/analyze-job', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ job, industry }) });
+      const data = await r.json(); tutorial = data.tutorial || []; selectors = data.selectors || [];
+    }
+    if (feature && feature.label && tutorial && tutorial.length){
+      if (!tutorial[0].toLowerCase().includes((feature.label||'').toLowerCase())){
+        tutorial.unshift(`Open ${feature.label}`);
+        selectors.unshift(null);
+      }
+    }
+    panel.classList.add('fg-hidden'); tab.classList.remove('fg-hidden');
+    panel.querySelector('#fg-setup').style.display='none'; panel.querySelector('#fg-opps').style.display='none'; panel.querySelector('#fg-lesson').style.display='block';
+    stepIndex=0; document.addEventListener('click', onClickHandler, true);
+    await speak(`We'll demo ${feature && feature.label ? feature.label : 'this feature'}. I'll show options and next steps.`);
+    await displayStepAndPoint(0);
+  }
+
+  async function displayStepAndPoint(i){
+    const stepText = tutorial[i] || '';
+    infoEl.innerHTML = `<div class="fg-stepcard"><strong>Step ${i+1}/${tutorial.length}</strong><div style="margin-top:8px">${stepText}</div></div>`;
+    const sel = selectors[i] || ''; const el = findElement(sel, stepText);
+    console.debug('displayStepAndPoint chosen element:', el, 'selector:', sel, 'textFallback:', stepText);
+    await highlightAndPoint(el);
+    showOptionsNear(el);
+    await speak(stepText);
+  }
+
+  async function speakStep(i){
+    if (i<0 || i>=tutorial.length) return;
+    const el = findElement(selectors[i], tutorial[i]);
+    await highlightAndPoint(el);
+    await speak(tutorial[i]);
+  }
+
+  async function onClickHandler(ev){
+    if (stepIndex >= tutorial.length) return;
+    const expectedSel = selectors[stepIndex] || '';
+    let expectedEl = findElement(expectedSel, tutorial[stepIndex]);
+    if (!expectedEl) expectedEl = findElement(null, tutorial[stepIndex]);
+    const clicked = ev.target;
+    if (expectedEl && (expectedEl === clicked || expectedEl.contains(clicked))){
+      stepIndex++;
+      if (stepIndex >= tutorial.length){
+        infoEl.innerHTML = `<div class="fg-stepcard"><strong>✅ Demo complete</strong><div style="margin-top:6px">Recommend: enable workflow, train team, or run sandbox.</div></div>`;
+        await highlightAndPoint(null); cursor.style.opacity='0'; await speak("✅ Demo complete.");
+        document.removeEventListener('click', onClickHandler, true); tab.classList.remove('fg-hidden'); panel.classList.add('fg-hidden');
+        return;
+      } else {
+        await speak("Nice — moving to the next step."); displayStepAndPoint(stepIndex);
+      }
+    } else {
+      await speak("Not quite — I'm pointing to the best option. Look for the highlighted control.");
+      if (expectedEl) { await highlightAndPoint(expectedEl); try{ expectedEl.animate([{transform:'scale(1)'},{transform:'scale(1.03)'},{transform:'scale(1)'}],{duration:350}); }catch(e){} }
+      else await speak("I can't find that exact control on this page. Use the left menu or search to find related features.");
+    }
+  }
+
+  function stopLesson(){
+    tutorial = []; selectors = []; stepIndex = 0;
+    panel.querySelector('#fg-setup').style.display='block'; panel.querySelector('#fg-opps').style.display='none'; panel.querySelector('#fg-lesson').style.display='none';
+    document.removeEventListener('click', onClickHandler, true); highlightAndPoint(null); cursor.style.opacity='0'; panel.classList.remove('fg-hidden'); tab.classList.add('fg-hidden');
+    speak("Demo stopped.");
+  }
+
+  /* ================= Options / UI helpers ================= */
+  function showOptionsNear(el){
+    if (!el){ optionsBox.classList.add('fg-hidden'); return; }
+    optionsBox.classList.remove('fg-hidden');
+    const list = optionsBox.querySelector('#fg-options-list'); list.innerHTML = '';
+    try {
+      const pool = Array.from(document.querySelectorAll('button, a, input, select, [role="button"], [data-label], .btn, .btn-primary')).filter(e=>e.offsetParent!==null);
+      const base = el.getBoundingClientRect();
+      const nearby = pool.map(p=>({p, r:p.getBoundingClientRect()})).filter(x=>{
+        const d = Math.hypot((x.r.left + x.r.width/2) - (base.left + base.width/2), (x.r.top + x.r.height/2) - (base.top + base.height/2));
+        return d < Math.max(window.innerWidth, window.innerHeight) * 0.6;
+      }).slice(0,25);
+      for (const row of nearby){
+        const label = (row.p.innerText||row.p.getAttribute('placeholder')||row.p.getAttribute('aria-label')||row.p.getAttribute('data-label')||'').trim().replace(/\s+/g,' ');
+        const selector = tryBuildSelector(row.p);
+        const div = document.createElement('div'); div.style.display='flex'; div.style.justifyContent='space-between'; div.style.padding='6px'; div.style.borderBottom='1px dashed rgba(255,255,255,.03)';
+        div.innerHTML = `<div style="max-width:62%">${label || '<no label>'}</div><div style="min-width:38%;text-align:right;color:#9fb0c9;font-size:12px">${selector}</div>`;
+        list.appendChild(div);
+      }
+    } catch(e){ console.error('showOptionsNear error', e); optionsBox.classList.add('fg-hidden'); }
+  }
+
+  function tryBuildSelector(el){
+    try {
+      if (el.id) return `#${el.id}`;
+      const dl = el.getAttribute && (el.getAttribute('data-label') || el.getAttribute('data-doctype'));
+      if (dl) return `[data-label="${dl}"]`;
+      const cls = el.className && (el.className.split(/\s+/)[0]);
+      if (cls) return `.${cls}`;
+      const text = (el.innerText||'').trim().replace(/"/g,'').slice(0,40);
+      if (text) return `button:has-text("${text}")`;
+      return el.tagName.toLowerCase();
+    } catch(e){ return el.tagName.toLowerCase(); }
+  }
+
+  /* ================= Keyboard shortcuts ================= */
+  document.addEventListener('keydown', (e)=>{
+    if (e.key === 'N' || e.key === 'n') { e.preventDefault(); if (stepIndex < tutorial.length-1) { stepIndex++; displayStepAndPoint(stepIndex); } }
+    if (e.key === 'P' || e.key === 'p') { e.preventDefault(); if (stepIndex > 0) { stepIndex--; displayStepAndPoint(stepIndex); } }
+    if (e.key === 'R' || e.key === 'r' || e.code === 'Space') { e.preventDefault(); speakStep(stepIndex); }
+  });
+
+  /* expose debug API */
+  window.FG_INVESTOR = {
+    runDiscovery, quickStart, startLesson, stopLesson, findElement, highlightAndPoint, showOptionsNear
+  };
+
+  console.log('✅ Frappe Demo Coach v2 loaded (voice + cursor hardened)');
 })();
